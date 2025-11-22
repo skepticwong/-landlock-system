@@ -1,34 +1,40 @@
+<script context="module">
+	export const load = async () => {
+		return {
+			redirect: '/dashboard',
+			status: 302
+		};
+	};
+</script>
+
 <script>
-	// ... [your exact same <script> content here — no changes needed] ...
 	import { onMount } from 'svelte';
-	import { plots, status, currentUser } from '$lib/store.js';
-	import { fetchPlots, registerPlot } from '$lib/api.js';
-	import { initMap, addPolyline, addPolygon } from '$lib/map.js';
+	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
 
-	let mapComponent;
-	let existingPlots = [];
-	let plotName = '';
-	let ownerPhone = '';
-	let points = [];
-	let currentStatus = 'Loading map...';
-	let polyline;
-	let L;
-	let mapReady = false;
+	onMount(() => {
+		if (browser) {
+			goto('/dashboard');
+		}
+	});
+</script>
 	let isFullscreen = false;
-	let mapHeight = 300;
+	let mapHeight = 500; // Default height in pixels
 	let isResizing = false;
-	 let selectedPlotId = null;
-  let plotLayers = [];
 
+	// Subscribe to status store
 	const unsubscribe = status.subscribe(value => {
 		currentStatus = value;
 	});
 
+	// Load existing plots on mount
 	onMount(async () => {
 		try {
+			// Import Leaflet
 			const leaflet = await import('leaflet');
 			L = leaflet.default || leaflet;
 
+			// Initialize map first
 			const mapElement = document.getElementById('map');
 			if (mapElement) {
 				mapComponent = await initMap(mapElement, (e) => {
@@ -41,11 +47,13 @@
 				mapReady = true;
 				status.set('Map ready! Click on the map or use GPS to add boundary points.');
 
+				// Then try to load existing plots
 				try {
 					const data = await fetchPlots();
 					plots.set(data);
 					existingPlots = data;
 					
+					// Add existing plots to map
 					if (existingPlots && existingPlots.length > 0) {
 						existingPlots.forEach(plot => {
 							if (plot.points && plot.points.length > 0) {
@@ -64,9 +72,11 @@
 			console.error('Initialization error:', error);
 		}
 
+		// Add resize event listeners
 		document.addEventListener('mousemove', handleResize);
 		document.addEventListener('mouseup', stopResize);
 
+		// Cleanup subscription on destroy
 		return () => {
 			unsubscribe();
 			document.removeEventListener('mousemove', handleResize);
@@ -74,37 +84,46 @@
 		};
 	});
 
+	// Update polyline to show boundaries as drawing
 	function updatePolyline() {
 		if (mapComponent && L && points.length > 0) {
 			const latlngs = points.map(p => [p.lat, p.lng]);
 
 			if (polyline) {
+				// Update existing polyline
 				polyline.setLatLngs(latlngs);
 			} else {
+				// Create new polyline with styling
 				polyline = L.polyline(latlngs, { 
-					color: '#0d9488', 
+					color: '#10b981', 
 					weight: 4,
 					opacity: 0.8,
-					dashArray: '10, 5'
+					dashArray: '10, 5' // Dashed line to show it's being drawn
 				}).addTo(mapComponent);
 			}
 
+			// If we have 3+ points, also show filled polygon preview
 			if (points.length >= 3) {
+				// Remove old polygon if exists
 				if (polyline.polygon) {
 					polyline.polygon.remove();
 				}
+				
+				// Add semi-transparent polygon
 				polyline.polygon = L.polygon(latlngs, {
-					color: '#0d9488',
-					fillColor: '#0d9488',
+					color: '#10b981',
+					fillColor: '#10b981',
 					fillOpacity: 0.2,
 					weight: 2
 				}).addTo(mapComponent);
 			}
 
+			// Keep map centered on latest point
 			mapComponent.panTo([points[points.length - 1].lat, points[points.length - 1].lng]);
 		}
 	}
 
+	// Add point using GPS
 	async function addPoint() {
 		if (!navigator.geolocation) {
 			status.set('❌ GPS not supported on this device.');
@@ -126,8 +145,10 @@
 		);
 	}
 
+	// Calculate approximate area using shoelace formula
 	function calculateArea() {
 		if (points.length < 3) return 0;
+		
 		let area = 0;
 		for (let i = 0; i < points.length; i++) {
 			const j = (i + 1) % points.length;
@@ -135,10 +156,13 @@
 			area -= points[j].lat * points[i].lng;
 		}
 		area = Math.abs(area) / 2;
+		
+		// Convert to acres (rough approximation)
 		const acres = area * 3044265;
 		return acres.toFixed(2);
 	}
 
+	// Clear all points
 	function clearPoints() {
 		points = [];
 		if (polyline) {
@@ -151,13 +175,18 @@
 		status.set('All points cleared. Start adding new boundary points.');
 	}
 
+	// Toggle fullscreen map
 	function toggleFullscreen() {
 		isFullscreen = !isFullscreen;
+		// Give map time to resize, then invalidate size
 		setTimeout(() => {
-			if (mapComponent) mapComponent.invalidateSize();
+			if (mapComponent) {
+				mapComponent.invalidateSize();
+			}
 		}, 100);
 	}
 
+	// Handle map resize
 	function startResize(e) {
 		isResizing = true;
 		e.preventDefault();
@@ -165,23 +194,32 @@
 
 	function handleResize(e) {
 		if (!isResizing) return;
+		
 		const mapCard = document.querySelector('.map-card');
 		if (!mapCard) return;
+		
 		const rect = mapCard.getBoundingClientRect();
-		const newHeight = Math.max(300, Math.min(800, e.clientY - rect.top - 120));
+		const newHeight = Math.max(300, Math.min(1000, e.clientY - rect.top - 80));
+		
 		mapHeight = newHeight;
-		if (mapComponent) mapComponent.invalidateSize();
+		
+		// Invalidate map size after resize
+		if (mapComponent) {
+			mapComponent.invalidateSize();
+		}
 	}
 
 	function stopResize() {
 		isResizing = false;
 	}
 
+	// Submit plot
 	async function submitPlot() {
 		if (!plotName || !ownerPhone) {
 			status.set('❌ Please fill in all required fields');
 			return;
 		}
+
 		if (points.length < 3) {
 			status.set('❌ Please add at least 3 boundary points');
 			return;
@@ -199,692 +237,308 @@
 			const newPlot = await registerPlot(plotData);
 			plots.update(p => [...p, newPlot]);
 			
+			// Remove drawing polyline/polygon
 			if (polyline) {
 				polyline.remove();
-				if (polyline.polygon) polyline.polygon.remove();
+				if (polyline.polygon) {
+					polyline.polygon.remove();
+				}
 				polyline = null;
 			}
 
+			// Add permanent polygon to map
 			if (mapComponent && newPlot.points) {
 				addPolygon(mapComponent, newPlot.points, newPlot.id, newPlot.plot_name);
 			}
 
 			status.set(`✅ Plot ${newPlot.id} registered successfully!`);
+			
+			// Reset form
 			plotName = '';
 			ownerPhone = '';
 			points = [];
 		} catch (error) {
 			status.set(`❌ Registration failed: ${error.message}`);
 			console.error('Submit error:', error);
-		}
-	}
-	
-	// Add these functions with your other functions
-  function calculateAreaFromPoints(points) {
-    if (!points || points.length < 3) return 0;
-    let area = 0;
-    for (let i = 0; i < points.length; i++) {
-      const j = (i + 1) % points.length;
-      area += points[i].lat * points[j].lng;
-      area -= points[j].lat * points[i].lng;
-    }
-    return (Math.abs(area) * 0.000247105).toFixed(2); // Convert to acres
-  }
-
-  function zoomToPlot(plot) {
-    if (!plot?.points?.length || !mapComponent) return;
-    
-    selectedPlotId = plot.id;
-    
-    // Clear any existing highlight layers
-    clearPlotHighlights();
-    
-    // Create a LatLngBounds object to contain the polygon
-    const bounds = L.latLngBounds(plot.points.map(p => [p.lat, p.lng]));
-    
-    // Fit the map to the bounds with some padding
-    mapComponent.fitBounds(bounds, {
-      padding: [50, 50],
-      maxZoom: 18
-    });
-    
-    // Add highlight layer
-    const highlight = L.polygon(
-      plot.points.map(p => [p.lat, p.lng]),
-      {
-        color: '#0d9488',
-        weight: 3,
-        opacity: 0.8,
-        fillColor: '#0d9488',
-        fillOpacity: 0.2
-      }
-    ).addTo(mapComponent);
-    
-    plotLayers.push(highlight);
-    
-    // Add a popup
-    highlight.bindPopup(`
-      <div class="plot-popup">
-        <h3>${plot.plot_name || 'Unnamed Plot'}</h3>
-        <p>ID: ${plot.id}</p>
-        <p>Status: <span class="status-${plot.status || 'pending'}">${plot.status || 'Pending'}</span></p>
-        <p>Area: ${calculateAreaFromPoints(plot.points)} acres</p>
-      </div>
-    `).openPopup();
-  }
-
-  function clearPlotHighlights() {
-    plotLayers.forEach(layer => {
-      if (mapComponent && layer) {
-        mapComponent.removeLayer(layer);
-      }
-    });
-    plotLayers = [];
-  }
-
-  // Update your existing onMount to include plot loading
-  onMount(async () => {
-    // ... existing onMount code ...
-    
-    // Load existing plots
-    await loadPlots();
-    
-    // ... rest of your onMount code ...
-  });
-
-  // Add this function to load plots
-  async function loadPlots() {
-    try {
-      const data = await fetchPlots();
-      if (data) {
-        existingPlots = Array.isArray(data) ? data : [];
-        plots.set(existingPlots);
-      }
-    } catch (error) {
-      console.error('Error loading plots:', error);
-      status.set('Error loading plots. Please try again.');
-    }
-  }
 </script>
 
 <svelte:head>
-	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+	<title>LandLock - Redirecting...</title>
 </svelte:head>
 
-<div class="app-container">
-	<header class="app-header">
-		<div class="header-content">
-			<div class="logo-circle">
-				<span>🌍</span>
-			</div>
-			<div>
-				<h1>LandLock</h1>
-				<p>Secure Land Registry for Malawi</p>
-			</div>
-		</div>
-	</header>
-
-	<main class="main-content">
-		<div class="status-banner">
-			<div class="status-icon">ℹ️</div>
-			<div class="status-text">
-				<div class="status-title">Current Status</div>
-				<div>{currentStatus}</div>
+<main class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50">
+	<div class="text-center p-8">
+		<div class="animate-pulse">
+			<svg class="mx-auto h-12 w-12 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+			</svg>
+			<div class="mt-4">
+				<h2 class="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">
+					LandLock
+				<div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+					<span class="text-xl">ℹ️</span>
+				</div>
+				<div class="flex-1">
+					<p class="font-semibold text-gray-800 text-sm mb-1">Current Status</p>
+					<p class="text-gray-600 text-sm leading-relaxed">{currentStatus}</p>
+				</div>
 			</div>
 		</div>
 
-		<div class="card">
-			<h2><span>📝</span> Plot Information</h2>
-			<div class="form-group">
-				<label>Plot Name</label>
-				<input type="text" placeholder="e.g., Family Farm, Main Homestead" bind:value={plotName} />
-			</div>
-			<div class="form-group">
-				<label>Phone Number</label>
-				<input type="tel" placeholder="265888123456" bind:value={ownerPhone} />
-			</div>
-			<button class="btn-primary" on:click={addPoint}>
-				<span>📍</span> Add Corner (Use GPS)
-			</button>
+		<!-- Form Card -->
+		<div class="bg-white rounded-2xl shadow-lg p-8 mb-6 border border-gray-100">
+			<h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+				<span class="text-2xl">📝</span>
+				Plot Information
+			</h2>
+			
+			<div class="space-y-5">
+				<div>
+					<label class="block text-sm font-semibold text-gray-700 mb-2">Plot Name</label>
+					<input
+						type="text"
+						placeholder="e.g., Family Farm, Main Homestead"
+						bind:value={plotName}
+						class="w-full p-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none transition-all text-gray-700 placeholder-gray-400"
+					/>
+				</div>
 
-			<div class="divider">or click directly on the map</div>
+				<div>
+					<label class="block text-sm font-semibold text-gray-700 mb-2">Phone Number</label>
+					<input
+						type="tel"
+						placeholder="265888123456"
+						bind:value={ownerPhone}
+						class="w-full p-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none transition-all text-gray-700 placeholder-gray-400"
+					/>
+				</div>
 
-			{#if points.length > 0}
-				<button class="btn-clear" on:click={clearPoints}>
-					<span>🗑️</span> Clear All Points
-				</button>
-			{/if}
-		</div>
-<div class="card">
-  <h2><span>📋</span> My Plots</h2>
-  <div class="plot-list">
-    {#if existingPlots && existingPlots.length > 0}
-      {#each existingPlots as plot}
-        <div 
-          class="plot-item" 
-          class:active={selectedPlotId === plot.id}
-          on:click={() => zoomToPlot(plot)}
-        >
-          <div class="plot-info">
-            <h3>{plot.plot_name || 'Unnamed Plot'}</h3>
-            <div class="plot-meta">
-              <span>ID: {plot.id}</span>
-              <span>{plot.points?.length || 0} points</span>
-              <span>{calculateAreaFromPoints(plot.points || [])} acres</span>
-            </div>
-          </div>
-          <div class="plot-status {plot.status || 'pending'}">
-            {plot.status || 'Pending'}
-          </div>
-        </div>
-      {/each}
-    {:else}
-      <div class="empty-state">
-        <p>No plots found. Start by adding your first plot!</p>
-      </div>
-    {/if}
-  </div>
-</div>
-		<div class="card map-card" class:fullscreen={isFullscreen}>
-			<div class="map-header">
-				<h2><span>🗺️</span> Interactive Map {#if mapReady}<span class="badge">Active</span>{/if}</h2>
-				<button class="btn-secondary" on:click={toggleFullscreen}>
-					{#if isFullscreen}<span>⤓</span> Exit Fullscreen{:else}<span>⤢</span> Fullscreen{/if}
-				</button>
-			</div>
-			<div class="map-wrapper" style="height: {mapHeight}px;">
-				<div id="map"></div>
-				{#if !isFullscreen}
-					<div class="resize-handle" on:mousedown={startResize}></div>
+				<div class="pt-2">
+					<button 
+						on:click={addPoint} 
+						class="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl"
+					>
+						<span class="flex items-center justify-center gap-2">
+							<span class="text-xl">📍</span>
+							Add Corner (Use GPS)
+						</span>
+					</button>
+				</div>
+
+				<div class="relative">
+					<div class="absolute inset-0 flex items-center">
+						<div class="w-full border-t border-gray-300"></div>
+					</div>
+					<div class="relative flex justify-center text-sm">
+						<span class="px-4 bg-white text-gray-500 font-medium">or click directly on the map</span>
+					</div>
+				</div>
+				
+				{#if points.length > 0}
+					<button 
+						on:click={clearPoints} 
+						class="w-full bg-red-50 hover:bg-red-100 text-red-600 font-semibold py-3 px-4 rounded-xl transition-all border-2 border-red-200"
+					>
+						<span class="flex items-center justify-center gap-2">
+							<span class="text-lg">🗑️</span>
+							Clear All Points
+						</span>
+					</button>
 				{/if}
 			</div>
 		</div>
 
-		{#if points.length > 0}
-			<div class="summary-card">
-				<div class="summary-header">
-					<div>
-						<h2><span>📐</span> Boundary Summary</h2>
-						<p>{points.length} corner points recorded</p>
-					</div>
-					<div class="acre-badge">{calculateArea()} acres</div>
-				</div>
-				<div class="points-list">
-					{#each points as p, i}
-						<div class="point-item">
-							<span class="point-number">{i + 1}</span>
-							<span><strong>Lat:</strong> {p.lat.toFixed(6)} | <strong>Lng:</strong> {p.lng.toFixed(6)}</span>
+		<!-- Map Card with Fullscreen -->
+		<div class="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-gray-100 map-card" class:fullscreen-map={isFullscreen}>
+			<div class="flex items-center justify-between mb-4">
+				<h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+					<span class="text-2xl">🗺️</span>
+					Interactive Map
+					{#if mapReady}
+						<span class="ml-2 text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full font-semibold">Active</span>
+					{/if}
+				</h2>
+				
+				<button
+					on:click={toggleFullscreen}
+					class="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm font-semibold text-gray-700"
+				>
+					{#if isFullscreen}
+						<span>⤓</span> Exit Fullscreen
+					{:else}
+						<span>⤢</span> Fullscreen
+					{/if}
+				</button>
+			</div>
+			
+			<div class="map-container" style="height: {mapHeight}px;">
+				<div id="map" class="w-full h-full rounded-xl overflow-hidden border-2 border-gray-200 shadow-inner" class:fullscreen-map-container={isFullscreen}></div>
+				
+				{#if !isFullscreen}
+					<div 
+						class="resize-handle"
+						on:mousedown={startResize}
+						role="button"
+						tabindex="0"
+						aria-label="Resize map"
+					>
+						<div class="resize-indicator">
+							<span>⋮</span>
 						</div>
-					{/each}
+					</div>
+				{/if}
+			</div>
+		</div>
+
+		<!-- Points Summary -->
+		{#if points.length > 0}
+			<div class="bg-gradient-to-br from-white to-emerald-50 rounded-2xl shadow-lg p-6 border-2 border-emerald-200 mb-6">
+				<div class="flex items-start justify-between mb-4">
+					<div>
+						<h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+							<span class="text-2xl">📐</span>
+							Boundary Summary
+						</h3>
+						<p class="text-sm text-gray-600 mt-1">{points.length} corner points recorded</p>
+					</div>
+					<div class="bg-emerald-500 text-white px-4 py-2 rounded-xl font-bold shadow-md">
+						{calculateArea()} acres
+					</div>
+				</div>
+				
+				<div class="bg-white rounded-xl p-4 border border-emerald-100">
+					<div class="grid gap-2 max-h-48 overflow-y-auto">
+						{#each points as p, i}
+							<div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-emerald-300 transition-colors">
+								<div class="w-8 h-8 bg-emerald-500 text-white rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
+									{i + 1}
+								</div>
+								<div class="flex-1 text-sm">
+									<span class="font-semibold text-gray-700">Lat:</span> 
+									<span class="text-gray-600">{p.lat.toFixed(6)}</span>
+									<span class="mx-2 text-gray-400">|</span>
+									<span class="font-semibold text-gray-700">Lng:</span> 
+									<span class="text-gray-600">{p.lng.toFixed(6)}</span>
+								</div>
+							</div>
+						{/each}
+					</div>
 				</div>
 			</div>
 		{/if}
 
+		<!-- Submit Button -->
 		{#if points.length >= 3}
-			<button class="btn-submit" on:click={submitPlot}>
-				<span>✅</span> Submit Plot for Review
+			<button 
+				on:click={submitPlot} 
+				class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-5 px-6 rounded-2xl transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-xl hover:shadow-2xl"
+			>
+				<span class="flex items-center justify-center gap-3">
+					<span class="text-2xl">✅</span>
+					<span class="text-lg">Submit Plot for Review</span>
+				</span>
 			</button>
 		{/if}
 
-		<div class="footer-note">🔒 Your land data is securely recorded and protected</div>
+		<!-- Footer Info -->
+		<div class="mt-8 text-center">
+			<p class="text-sm text-gray-500">
+				🔒 Your land data is securely recorded and protected
+			</p>
+		</div>
 	</main>
 </div>
 
 <style>
-	/* =============== BASE =============== */
 	:global(body) {
 		margin: 0;
 		padding: 0;
-		font-family: 'Inter', sans-serif;
-		background: #f0fdf4;
-		color: #1e293b;
+		font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		user-select: none;
 	}
-
-	.app-container {
-		min-height: 100vh;
-		background: linear-gradient(to bottom, #f0fdf4, #e6f7ee);
-	}
-
-	/* =============== HEADER =============== */
-	.app-header {
-		background: white;
-		box-shadow: 0 2px 6px rgba(0,0,0,0.05);
-		border-bottom: 1px solid #e2e8f0;
-		padding: 1.5rem 1rem;
-	}
-	.header-content {
-		max-width: 1200px;
-		margin: 0 auto;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 1rem;
-	}
-	.logo-circle {
-		width: 3rem;
-		height: 3rem;
-		border-radius: 0.75rem;
-		background: linear-gradient(135deg, #0d9488, #0b7a71);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 1.5rem;
-		box-shadow: 0 4px 8px rgba(13,148,136,0.25);
-		color: white;
-	}
-	.app-header h1 {
-		font-size: 1.875rem;
-		font-weight: 700;
-		background: linear-gradient(90deg, #0d9488, #0b7a71);
-		background-clip: text;
-		-webkit-background-clip: text;
-		color: transparent;
-	}
-	.app-header p {
-		font-size: 0.875rem;
-		color: #64748b;
-		font-weight: 600;
-	}
-
-	/* =============== LAYOUT =============== */
-	.main-content {
-		max-width: 1200px;
-		margin: 2rem auto;
-		padding: 0 1rem;
-	}
-
-	/* =============== CARDS =============== */
-	.card {
-		background: white;
-		border-radius: 16px;
-		box-shadow: 0 4px 12px rgba(0,0,0,0.04);
-		border: 1px solid #e2e8f0;
-		padding: 1.5rem;
-		margin-bottom: 1.5rem;
-	}
-
-	/* =============== STATUS =============== */
-	.status-banner {
-		background: #f0f9ff;
-		border: 1px solid #bae6fd;
-		border-radius: 12px;
-		padding: 1rem;
-		display: flex;
-		gap: 1rem;
-		margin-bottom: 1.5rem;
-	}
-	.status-icon {
-		width: 2.25rem;
-		height: 2.25rem;
-		border-radius: 50%;
-		background: #dbeafe;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-		font-size: 1.25rem;
-	}
-	.status-title {
-		font-weight: 600;
-		color: #1e3a8a;
-		font-size: 0.875rem;
-		margin-bottom: 0.25rem;
-	}
-	.status-text > div {
-		font-size: 0.875rem;
-		color: #1e40af;
-	}
-
-	/* =============== FORM =============== */
-	.card h2 {
-		font-size: 1.25rem;
-		font-weight: 700;
-		margin-bottom: 1.25rem;
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-	.form-group {
-		margin-bottom: 1.25rem;
-	}
-	.form-group label {
-		display: block;
-		font-weight: 600;
-		font-size: 0.875rem;
-		margin-bottom: 0.5rem;
-		color: #334155;
-	}
-	.form-group input {
-		width: 100%;
-		padding: 0.875rem 1rem;
-		border: 2px solid #e2e8f0;
-		border-radius: 12px;
-		font-size: 1rem;
-		background: #f8fafc;
-		transition: border-color 0.2s;
-	}
-	.form-group input:focus {
-		outline: none;
-		border-color: #0d9488;
-		box-shadow: 0 0 0 3px rgba(13,148,136,0.15);
-	}
-
-	/* =============== BUTTONS =============== */
-	.btn-primary {
-		width: 100%;
-		padding: 1rem;
-		background: linear-gradient(135deg, #0d9488, #0b7a71);
-		color: white;
-		border: none;
-		border-radius: 12px;
-		font-weight: 600;
-		font-size: 1rem;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.75rem;
-		box-shadow: 0 4px 10px rgba(13,148,136,0.3);
-		transition: all 0.2s;
-	}
-	.btn-primary:hover {
-		background: linear-gradient(135deg, #0b7a71, #09615b);
-		transform: translateY(-2px);
-		box-shadow: 0 6px 14px rgba(13,148,136,0.4);
-	}
-
-	.btn-clear {
-		width: 100%;
-		padding: 0.9rem;
-		background: white;
-		color: #dc2626;
-		border: 2px solid #fecaca;
-		border-radius: 12px;
-		font-weight: 600;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.75rem;
-		transition: background 0.2s;
-	}
-	.btn-clear:hover {
-		background: #fef2f2;
-	}
-
-	.btn-secondary {
-		padding: 0.5rem 1rem;
-		background: #f1f5f9;
-		color: #475569;
-		border: none;
-		border-radius: 8px;
-		font-weight: 600;
-		font-size: 0.9rem;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-	.btn-secondary:hover {
-		background: #e2e8f0;
-	}
-
-	.btn-submit {
-		width: 100%;
-		padding: 1.1rem;
-		background: linear-gradient(135deg, #2563eb, #1d4ed8);
-		color: white;
-		border: none;
-		border-radius: 16px;
-		font-weight: 700;
-		font-size: 1.1rem;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.75rem;
-		box-shadow: 0 6px 16px rgba(37,99,235,0.3);
-		transition: all 0.2s;
-		margin-bottom: 2rem;
-	}
-	.btn-submit:hover {
-		background: linear-gradient(135deg, #1d4ed8, #1e40af);
-		transform: translateY(-2px);
-		box-shadow: 0 8px 20px rgba(37,99,235,0.4);
-	}
-
-	/* =============== DIVIDER =============== */
-	.divider {
+	
+	.map-container {
 		position: relative;
-		text-align: center;
-		color: #64748b;
-		font-size: 0.875rem;
-		font-weight: 500;
-		margin: 1.5rem 0;
-	}
-	.divider::before {
-		content: '';
-		position: absolute;
-		top: 50%;
-		left: 0;
-		right: 0;
-		border-top: 1px solid #cbd5e1;
-		z-index: 1;
-	}
-	.divider::after {
-		content: attr(data-text);
-		content: "or click directly on the map";
-		background: white;
-		padding: 0 0.75rem;
-		position: relative;
-		z-index: 2;
+		width: 100%;
 	}
 
-	/* =============== MAP =============== */
-	.map-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1rem;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-	}
-	.badge {
-		font-size: 0.75rem;
-		background: #dcfce7;
-		color: #166534;
-		padding: 0.25rem 0.75rem;
-		border-radius: 9999px;
-		font-weight: 600;
-	}
-	.map-wrapper {
-		position: relative;
-		border-radius: 12px;
-		overflow: hidden;
-		border: 2px solid #e2e8f0;
-		background: #f1f5f6;
-	}
-	#map {
+	#map { 
 		width: 100%;
 		height: 100%;
-		background: #f8fafc;
+		position: relative;
+		background: #f3f4f6;
+		transition: height 0.1s ease;
 	}
+
 	.resize-handle {
 		position: absolute;
 		bottom: 0;
 		left: 0;
 		right: 0;
-		height: 24px;
+		height: 20px;
 		cursor: ns-resize;
-		background: rgba(255,255,255,0.7);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 18px;
-		color: #0d9488;
-		font-weight: bold;
+		background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.05));
+		border-radius: 0 0 0.75rem 0.75rem;
 	}
 
-	/* Fullscreen */
-	.fullscreen {
+	.resize-handle:hover {
+		background: linear-gradient(to bottom, transparent, rgba(16, 185, 129, 0.1));
+	}
+
+	.resize-indicator {
+		background: #10b981;
+		color: white;
+		padding: 2px 12px;
+		border-radius: 8px;
+		font-size: 12px;
+		font-weight: bold;
+		pointer-events: none;
+		box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+	}
+
+	.fullscreen-map-container {
+		height: calc(100vh - 200px) !important;
+	}
+
+	.fullscreen-map {
 		position: fixed;
 		top: 0;
 		left: 0;
 		right: 0;
 		bottom: 0;
 		z-index: 9999;
-		margin: 0;
-		border-radius: 0;
-		padding: 1rem;
 		max-width: 100%;
-	}
-	.fullscreen .map-wrapper {
-		height: calc(100vh - 160px) !important;
-	}
-
-	/* =============== SUMMARY =============== */
-	.summary-card {
-		background: #f0fdf4;
-		border: 1px solid #bbf7d0;
-		border-radius: 16px;
-		padding: 1.5rem;
-		margin-bottom: 1.5rem;
-	}
-	.summary-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		margin-bottom: 1rem;
-		flex-wrap: wrap;
-		gap: 1rem;
-	}
-	.acre-badge {
-		background: #0d9488;
-		color: white;
-		padding: 0.5rem 1rem;
-		border-radius: 12px;
-		font-weight: 700;
-		font-size: 1.125rem;
-		box-shadow: 0 4px 8px rgba(13,148,136,0.2);
-	}
-	.points-list {
-		background: white;
-		border-radius: 12px;
+		margin: 0;
+		border-radius: 0 !important;
 		padding: 1rem;
-		border: 1px solid #e2e8f0;
-		max-height: 12rem;
-		overflow-y: auto;
+		background: white;
 	}
-	.point-item {
-		display: flex;
-		gap: 0.75rem;
-		padding: 0.75rem;
-		background: #f8fafc;
-		border-radius: 8px;
-		font-size: 0.875rem;
-		margin-bottom: 0.5rem;
-	}
-	.point-item:last-child {
-		margin-bottom: 0;
-	}
-	.point-number {
-		width: 24px;
-		height: 24px;
-		border-radius: 50%;
-		background: #0d9488;
-		color: white;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-weight: 600;
-		font-size: 0.875rem;
-		flex-shrink: 0;
+	
+	:global(.leaflet-container) { 
+		height: 100% !important; 
+		width: 100% !important; 
+		z-index: 1;
 	}
 
-	/* =============== FOOTER =============== */
-	.footer-note {
-		text-align: center;
-		font-size: 0.875rem;
-		color: #64748b;
-		margin-top: 1rem;
+	/* Custom scrollbar for points list */
+	.overflow-y-auto::-webkit-scrollbar {
+		width: 8px;
 	}
 
-	/* =============== LEAFLET FIX =============== */
-	:global(.leaflet-container) {
-		background: #f8fafc !important;
+	.overflow-y-auto::-webkit-scrollbar-track {
+		background: #f1f1f1;
+		border-radius: 10px;
 	}
-	 .plot-list {
-    display: grid;
-    gap: 0.75rem;
-    margin-top: 1rem;
-  }
 
-  .plot-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem;
-    background: white;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
+	.overflow-y-auto::-webkit-scrollbar-thumb {
+		background: #10b981;
+		border-radius: 10px;
+	}
 
-  .plot-item:hover {
-    border-color: #0d9488;
-    box-shadow: 0 2px 8px rgba(13, 148, 136, 0.1);
-    transform: translateY(-1px);
-  }
-
-  .plot-item.active {
-    border-color: #0d9488;
-    background: #f0fdf4;
-  }
-
-  .plot-info h3 {
-    font-weight: 600;
-    margin: 0 0 0.25rem 0;
-    color: #1e293b;
-  }
-
-  .plot-meta {
-    display: flex;
-    gap: 1rem;
-    font-size: 0.875rem;
-    color: #64748b;
-  }
-
-  .plot-status {
-    padding: 0.25rem 0.75rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: capitalize;
-  }
-
-  .plot-status.pending {
-    background: #fef3c7;
-    color: #92400e;
-  }
-
-  .plot-status.approved {
-    background: #dcfce7;
-    color: #166534;
-  }
-
-  .plot-status.rejected {
-    background: #fee2e2;
-    color: #991b1b;
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: 2rem;
-    color: #64748b;
-    background: #f8fafc;
-    border-radius: 12px;
-    border: 1px dashed #e2e8f0;
-  }
+	.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+		background: #059669;
+	}
 </style>
