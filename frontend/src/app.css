@@ -10,4 +10,66 @@
 .leaflet-container {
   height: 100%;
   width: 100%;
+} \
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles */
+body {
+  @apply bg-gray-50;
+}
+
+/* Button styles */
+.btn {
+  @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500;
+}
+
+.btn-outline {
+  @apply border-gray-300 text-teal-700 bg-white hover:bg-gray-50 focus:ring-teal-500;
+}
+
+/* Form styles */
+.input {
+  @apply appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm;
+}
+
+/* Card styles */
+.card {
+  @apply bg-white overflow-hidden shadow rounded-lg;
+}
+
+.card-header {
+  @apply px-4 py-5 sm:px-6 border-b border-gray-200;
+}
+
+.card-body {
+  @apply px-4 py-5 sm:p-6;
+}
+
+/* Alert styles */
+.alert {
+  @apply p-4 rounded-md;
+}
+
+.alert-error {
+  @apply bg-red-50 border-l-4 border-red-400 p-4;
+}
+
+.alert-success {
+  @apply bg-green-50 border-l-4 border-green-400 p-4;
+}
+
+/* Status badges */
+.status-pending {
+  @apply bg-yellow-100 text-yellow-800 text-xs font-medium px-2.5 py-0.5 rounded;
+}
+
+.status-approved {
+  @apply bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded;
+}
+
+.status-rejected {
+  @apply bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded;
 }
