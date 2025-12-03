@@ -261,6 +261,10 @@
         <span class="nav-icon">📊</span>
         <span>Dashboard</span>
       </a>
+      <a href="/dashboard/register-citizen" class="nav-item" on:click={closeMobileMenu}>
+        <span class="nav-icon">👥</span>
+        <span>Register Citizen</span>
+      </a>
       <a href="/register-plot" class="nav-item" on:click={closeMobileMenu}>
         <span class="nav-icon">➕</span>
         <span>Register Plot</span>
