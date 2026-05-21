@@ -6,12 +6,10 @@
   import { fetchPlots } from '$lib/api';
   import { initMap } from '$lib/map';
   import SimpleBarChart from '$lib/components/SimpleBarChart.svelte';
-  import { fade } from 'svelte/transition';
 
   let userPlots = [];
   let map;
   let loading = true;
-  let mobileMenuOpen = false;
   let stats = {
     total: 0,
     pending: 0,
@@ -93,11 +91,9 @@
     if (!mapElement) return;
 
     try {
-      // Import Leaflet dynamically
       const leaflet = await import('leaflet');
       const L = leaflet.default || leaflet;
       
-      // Initialize map with default view
       map = L.map('dashboard-map', {
         center: [-13.9626, 33.7741],
         zoom: 6,
@@ -105,18 +101,15 @@
         scrollWheelZoom: true
       });
 
-      // Add OpenStreetMap tiles
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
         maxZoom: 19,
         detectRetina: true
       }).addTo(map);
 
-      // Add markers for each plot
       plots.forEach(plot => {
         if (!plot.points || plot.points.length === 0) return;
 
-        // Calculate center of the plot
         const center = plot.points.reduce(
           (acc, point) => {
             acc.lat += point.lat;
@@ -129,7 +122,6 @@
         const avgLat = center.lat / plot.points.length;
         const avgLng = center.lng / plot.points.length;
 
-        // Create a custom icon
         const icon = L.divIcon({
           className: 'plot-marker',
           html: `
@@ -145,10 +137,8 @@
           popupAnchor: [0, -32]
         });
 
-        // Create marker with custom icon
         const marker = L.marker([avgLat, avgLng], { icon });
 
-        // Add popup with plot information
         const popupContent = `
           <div class="popup-content">
             <h4 class="font-bold text-lg mb-1">${plot.plot_name || 'Unnamed Plot'}</h4>
@@ -171,7 +161,6 @@
         }).addTo(map);
       });
 
-      // Fit bounds to show all markers if there are any plots
       if (plots.length > 0 && plots.some(plot => plot.points && plot.points.length > 0)) {
         const markers = plots
           .filter(plot => plot.points && plot.points.length > 0)
@@ -187,7 +176,6 @@
             return [center.lat / plot.points.length, center.lng / plot.points.length];
           });
         
-        // Add some padding around the bounds
         map.fitBounds(markers, { 
           padding: [50, 50],
           maxZoom: 15
@@ -203,415 +191,148 @@
     if (typeof area !== 'number' || isNaN(area) || area <= 0) return '0 acres';
     return `${area.toFixed(2)} acres`;
   }
-
-  function logout() {
-    if (browser) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-    }
-    goto('/login');
-  }
-
-  function toggleMobileMenu() {
-    mobileMenuOpen = !mobileMenuOpen;
-  }
-
-  function closeMobileMenu() {
-    mobileMenuOpen = false;
-  }
 </script>
 
 <svelte:head>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </svelte:head>
 
-<div class="dashboard-wrapper">
-  <!-- Mobile Header -->
-  <header class="mobile-header">
-    <button class="menu-toggle" on:click={toggleMobileMenu} aria-label="Toggle menu">
-      <span></span>
-      <span></span>
-      <span></span>
-    </button>
-    <div class="mobile-logo">
-      <span class="logo-icon">🌍</span>
-      <span class="logo-text">LandLock</span>
-    </div>
-    <div class="mobile-spacer"></div>
-  </header>
-
-  <!-- Overlay for mobile menu -->
-  {#if mobileMenuOpen}
-    <div class="overlay" on:click={closeMobileMenu} transition:fade={{ duration: 200 }}></div>
-  {/if}
-
-  <!-- Sidebar Navigation -->
-  <aside class="sidebar" class:open={mobileMenuOpen}>
-    <div class="sidebar-header">
-      <div class="logo">
-        <span class="logo-icon">🌍</span>
-        <span class="logo-text">LandLock</span>
-      </div>
-    </div>
-
-    <nav class="sidebar-nav">
-      <a href="/dashboard" class="nav-item active" on:click={closeMobileMenu}>
-        <span class="nav-icon">📊</span>
-        <span>Dashboard</span>
-      </a>
-      <a href="/dashboard/register-citizen" class="nav-item" on:click={closeMobileMenu}>
-        <span class="nav-icon">👥</span>
-        <span>Register Citizen</span>
-      </a>
-      <a href="/register-plot" class="nav-item" on:click={closeMobileMenu}>
-        <span class="nav-icon">➕</span>
-        <span>Register Plot</span>
-      </a>
-      <a href="/plots" class="nav-item" on:click={closeMobileMenu}>
-        <span class="nav-icon">📋</span>
-        <span>My Plots</span>
-      </a>
-      <a href="/map" class="nav-item" on:click={closeMobileMenu}>
-        <span class="nav-icon">🗺️</span>
-        <span>Map View</span>
-      </a>
-      <a href="/profile" class="nav-item" on:click={closeMobileMenu}>
-        <span class="nav-icon">👤</span>
-        <span>Profile</span>
-      </a>
-    </nav>
-
-    <div class="sidebar-footer">
-      <button on:click={logout} class="logout-btn">
-        <span>🚪</span>
-        <span>Logout</span>
-      </button>
-    </div>
-  </aside>
-
-  <!-- Main Content -->
-  <main class="main-content">
-    <div class="content-header">
-      <div>
-        <h1 class="page-title">Dashboard</h1>
-        <p class="page-subtitle">Welcome back! Here's your land registry overview.</p>
-      </div>
-    </div>
-
-    {#if loading}
-      <div class="loading-state">
-        <div class="spinner"></div>
-        <p>Loading dashboard...</p>
-      </div>
-    {:else}
-      <!-- Stats Grid -->
-      <div class="stats-grid">
-        <div class="stat-card stat-primary">
-          <div class="stat-icon">📋</div>
-          <div class="stat-content">
-            <div class="stat-value">{stats.total}</div>
-            <div class="stat-label">Total Plots</div>
-          </div>
-        </div>
-
-        <div class="stat-card stat-warning">
-          <div class="stat-icon">⏳</div>
-          <div class="stat-content">
-            <div class="stat-value">{stats.pending}</div>
-            <div class="stat-label">Pending</div>
-          </div>
-        </div>
-
-        <div class="stat-card stat-success">
-          <div class="stat-icon">✅</div>
-          <div class="stat-content">
-            <div class="stat-value">{stats.approved}</div>
-            <div class="stat-label">Approved</div>
-          </div>
-        </div>
-
-        <div class="stat-card stat-info">
-          <div class="stat-icon">📐</div>
-          <div class="stat-content">
-            <div class="stat-value">{formatArea(stats.totalArea)}</div>
-            <div class="stat-label">Total Area</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Content Grid -->
-      <div class="content-grid">
-        <!-- Recent Plots -->
-        <div class="card recent-plots">
-          <div class="card-header">
-            <h2>Recent Plots</h2>
-          </div>
-          <div class="plot-list">
-            {#if userPlots.length === 0}
-              <div class="empty-state">
-                <p>No plots found.</p>
-                <a href="/register-plot" class="link">Register your first plot</a>
-              </div>
-            {:else}
-              {#each userPlots.slice(0, 5) as plot}
-                <a href={`/plots/${plot.id}`} class="plot-item">
-                  <div class="plot-info">
-                    <div class="plot-name">{plot.plot_name || 'Unnamed Plot'}</div>
-                    <div class="plot-date">{new Date(plot.created_at).toLocaleDateString()}</div>
-                    {#if plot.area}
-                      <div class="plot-area">Area: {formatArea(plot.area)}</div>
-                    {/if}
-                  </div>
-                  <span class="status-badge status-{plot.status}">
-                    {plot.status}
-                  </span>
-                </a>
-              {/each}
-            {/if}
-          </div>
-          {#if userPlots.length > 0}
-            <div class="card-footer">
-              <a href="/plots" class="link">View all plots →</a>
-            </div>
-          {/if}
-        </div>
-
-        <!-- Sidebar Content -->
-        <div class="sidebar-content">
-          <!-- Quick Actions -->
-          <div class="card quick-actions">
-            <div class="card-header">
-              <h2>Quick Actions</h2>
-            </div>
-            <div class="action-list">
-              <a href="/register-plot" class="action-item action-primary">
-                <span class="action-icon">➕</span>
-                <span>Register New Plot</span>
-              </a>
-              <a href="/profile" class="action-item action-secondary">
-                <span class="action-icon">👤</span>
-                <span>Update Profile</span>
-              </a>
-              <a href="/help" class="action-item action-tertiary">
-                <span class="action-icon">❓</span>
-                <span>Get Help</span>
-              </a>
-            </div>
-          </div>
-
-          <!-- Chart -->
-          <div class="card chart-card">
-            <div class="card-header">
-              <h2>Monthly Registrations</h2>
-            </div>
-            <div class="chart-container">
-              <SimpleBarChart 
-                data={chartData.series[0].values} 
-                labels={chartData.labels} 
-                barColor="#0d9488"
-                height="200px"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Map -->
-      <div class="card map-card">
-        <div class="card-header">
-          <h2>Your Plots on Map</h2>
-          <a href="/map" class="link">View Full Map →</a>
-        </div>
-        <div id="dashboard-map" class="map-container"></div>
-      </div>
-    {/if}
-  </main>
+<div class="content-header">
+  <div>
+    <h1 class="page-title">Dashboard</h1>
+    <p class="page-subtitle">Welcome back! Here's your land registry overview.</p>
+  </div>
 </div>
 
+{#if loading}
+  <div class="loading-state">
+    <div class="spinner"></div>
+    <p>Loading dashboard...</p>
+  </div>
+{:else}
+  <!-- Stats Grid -->
+  <div class="stats-grid">
+    <div class="stat-card stat-primary">
+      <div class="stat-icon">📋</div>
+      <div class="stat-content">
+        <div class="stat-value">{stats.total}</div>
+        <div class="stat-label">Total Plots</div>
+      </div>
+    </div>
+
+    <div class="stat-card stat-warning">
+      <div class="stat-icon">⏳</div>
+      <div class="stat-content">
+        <div class="stat-value">{stats.pending}</div>
+        <div class="stat-label">Pending</div>
+      </div>
+    </div>
+
+    <div class="stat-card stat-success">
+      <div class="stat-icon">✅</div>
+      <div class="stat-content">
+        <div class="stat-value">{stats.approved}</div>
+        <div class="stat-label">Approved</div>
+      </div>
+    </div>
+
+    <div class="stat-card stat-info">
+      <div class="stat-icon">📐</div>
+      <div class="stat-content">
+        <div class="stat-value">{formatArea(stats.totalArea)}</div>
+        <div class="stat-label">Total Area</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Content Grid -->
+  <div class="content-grid">
+    <!-- Recent Plots -->
+    <div class="card recent-plots">
+      <div class="card-header">
+        <h2>Recent Plots</h2>
+      </div>
+      <div class="plot-list">
+        {#if userPlots.length === 0}
+          <div class="empty-state">
+            <p>No plots found.</p>
+            <a href="/register-plot" class="link">Register your first plot</a>
+          </div>
+        {:else}
+          {#each userPlots.slice(0, 5) as plot}
+            <a href={`/plots/${plot.id}`} class="plot-item">
+              <div class="plot-info">
+                <div class="plot-name">{plot.plot_name || 'Unnamed Plot'}</div>
+                <div class="plot-date">{new Date(plot.created_at).toLocaleDateString()}</div>
+                {#if plot.area}
+                  <div class="plot-area">Area: {formatArea(plot.area)}</div>
+                {/if}
+              </div>
+              <span class="status-badge status-{plot.status}">
+                {plot.status}
+              </span>
+            </a>
+          {/each}
+        {/if}
+      </div>
+      {#if userPlots.length > 0}
+        <div class="card-footer">
+          <a href="/plots" class="link">View all plots →</a>
+        </div>
+      {/if}
+    </div>
+
+    <!-- Sidebar Content -->
+    <div class="sidebar-content">
+      <!-- Quick Actions -->
+      <div class="card quick-actions">
+        <div class="card-header">
+          <h2>Quick Actions</h2>
+        </div>
+        <div class="action-list">
+          <a href="/register-plot" class="action-item action-primary">
+            <span class="action-icon">➕</span>
+            <span>Register New Plot</span>
+          </a>
+          <a href="/profile" class="action-item action-secondary">
+            <span class="action-icon">👤</span>
+            <span>Update Profile</span>
+          </a>
+          <a href="/help" class="action-item action-tertiary">
+            <span class="action-icon">❓</span>
+            <span>Get Help</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div class="card chart-card">
+        <div class="card-header">
+          <h2>Monthly Registrations</h2>
+        </div>
+        <div class="chart-container">
+          <SimpleBarChart 
+            data={chartData.series[0].values} 
+            labels={chartData.labels} 
+            barColor="#0d9488"
+            height="200px"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Map -->
+  <div class="card map-card">
+    <div class="card-header">
+      <h2>Your Plots on Map</h2>
+      <a href="/map" class="link">View Full Map →</a>
+    </div>
+    <div id="dashboard-map" class="map-container"></div>
+  </div>
+{/if}
+
 <style>
-  :global(body) {
-    margin: 0;
-    padding: 0;
-    font-family: 'Inter', sans-serif;
-    background: #f8faf9;
-  }
-
-  /* Layout */
-  .dashboard-wrapper {
-    display: flex;
-    min-height: 100vh;
-  }
-
-  /* Mobile Header */
-  .mobile-header {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 60px;
-    background: white;
-    border-bottom: 1px solid #e2e8f0;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 1rem;
-    z-index: 1001;
-  }
-
-  .menu-toggle {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 8px;
-  }
-
-  .menu-toggle span {
-    width: 24px;
-    height: 3px;
-    background: #0d9488;
-    border-radius: 2px;
-    transition: all 0.3s;
-  }
-
-  .mobile-logo {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .mobile-spacer {
-    width: 40px;
-  }
-
-  /* Overlay */
-  .overlay {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 999;
-  }
-
-  /* Sidebar */
-  .sidebar {
-    width: 260px;
-    background: white;
-    border-right: 1px solid #e2e8f0;
-    display: flex;
-    flex-direction: column;
-    position: fixed;
-    height: 100vh;
-    left: 0;
-    top: 0;
-    z-index: 1000;
-    transition: transform 0.3s ease;
-  }
-
-  .sidebar-header {
-    padding: 1.5rem;
-    border-bottom: 1px solid #e2e8f0;
-  }
-
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .logo-icon {
-    width: 40px;
-    height: 40px;
-    background: linear-gradient(135deg, #0d9488, #10b981);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-    box-shadow: 0 4px 8px rgba(13, 148, 136, 0.2);
-  }
-
-  .logo-text {
-    font-size: 1.25rem;
-    font-weight: 700;
-    background: linear-gradient(90deg, #0d9488, #10b981);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .sidebar-nav {
-    flex: 1;
-    padding: 1rem;
-    overflow-y: auto;
-  }
-
-  .nav-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    border-radius: 10px;
-    color: #64748b;
-    text-decoration: none;
-    font-weight: 500;
-    margin-bottom: 0.25rem;
-    transition: all 0.2s;
-  }
-
-  .nav-item:hover {
-    background: #f1f5f9;
-    color: #0d9488;
-  }
-
-  .nav-item.active {
-    background: linear-gradient(135deg, #0d9488, #10b981);
-    color: white;
-    box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
-  }
-
-  .nav-icon {
-    font-size: 1.25rem;
-  }
-
-  .sidebar-footer {
-    padding: 1rem;
-    border-top: 1px solid #e2e8f0;
-  }
-
-  .logout-btn {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    border: none;
-    background: #fee2e2;
-    color: #dc2626;
-    border-radius: 10px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .logout-btn:hover {
-    background: #fecaca;
-  }
-
-  /* Main Content */
-  .main-content {
-    flex: 1;
-    margin-left: 260px;
-    padding: 2rem;
-    max-width: calc(100vw - 260px);
-  }
-
   .content-header {
     margin-bottom: 2rem;
   }
@@ -807,12 +528,12 @@
   }
 
   /* Map Marker Styles */
-  .plot-marker {
+  :global(.plot-marker) {
     background: none !important;
     border: none !important;
   }
 
-  .marker-inner {
+  :global(.marker-inner) {
     width: 32px;
     height: 32px;
     border-radius: 50%;
@@ -827,13 +548,13 @@
     transition: all 0.2s ease;
   }
 
-  .marker-inner:hover {
+  :global(.marker-inner:hover) {
     transform: scale(1.1);
     z-index: 1000;
   }
 
   /* Popup Styles */
-  .plot-popup {
+  :global(.plot-popup) {
     border-radius: 12px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.15);
     border: none;
@@ -841,38 +562,29 @@
     overflow: hidden;
   }
 
-  .plot-popup .leaflet-popup-content-wrapper {
+  :global(.plot-popup .leaflet-popup-content-wrapper) {
     padding: 0;
     border-radius: 12px;
     overflow: hidden;
   }
 
-  .plot-popup .leaflet-popup-content {
+  :global(.plot-popup .leaflet-popup-content) {
     margin: 0;
     width: 100% !important;
   }
 
-  .popup-content {
+  :global(.popup-content) {
     padding: 1rem;
   }
 
-  .plot-popup .leaflet-popup-tip {
+  :global(.plot-popup .leaflet-popup-tip) {
     background: white;
     box-shadow: -1px -1px 2px rgba(0,0,0,0.1);
   }
 
-  .status-badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: capitalize;
-    white-space: nowrap;
+  :global(.leaflet-container) {
+    height: 100% !important;
   }
-
-  .status-pending { background: #fef3c7; color: #92400e; }
-  .status-approved { background: #dcfce7; color: #166534; }
-  .status-rejected { background: #fee2e2; color: #991b1b; }
 
   /* Quick Actions */
   .action-list {
@@ -943,10 +655,6 @@
     height: 100%;
   }
 
-  :global(.leaflet-container) {
-    height: 100% !important;
-  }
-
   /* Chart */
   .chart-container {
     padding: 1.5rem;
@@ -977,29 +685,6 @@
 
   /* Responsive - Mobile */
   @media (max-width: 768px) {
-    .mobile-header {
-      display: flex;
-    }
-
-    .overlay {
-      display: block;
-    }
-
-    .sidebar {
-      transform: translateX(-100%);
-    }
-
-    .sidebar.open {
-      transform: translateX(0);
-    }
-
-    .main-content {
-      margin-left: 0;
-      margin-top: 60px;
-      max-width: 100vw;
-      padding: 1rem;
-    }
-
     .page-title {
       font-size: 1.5rem;
     }
@@ -1056,10 +741,6 @@
 
   /* Responsive - Small Mobile */
   @media (max-width: 480px) {
-    .main-content {
-      padding: 0.75rem;
-    }
-
     .content-header {
       margin-bottom: 1.5rem;
     }
