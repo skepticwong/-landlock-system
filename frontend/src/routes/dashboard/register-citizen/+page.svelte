@@ -269,7 +269,7 @@
   });
 </script>
 
-<div class="register-container">
+<div class="register-page">
   <div class="register-card">
     <div class="header-section">
       <div class="back-button" on:click={() => goto('/dashboard')}>
@@ -477,13 +477,8 @@
 </div>
 
 <style>
-  .register-container {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(to bottom, #f0fdf4, #e6f7ee);
-    padding: 1rem;
+  .register-page {
+    width: 100%;
   }
 
   .register-card {
@@ -492,9 +487,7 @@
     box-shadow: 0 8px 24px rgba(0,0,0,0.1);
     padding: 2rem;
     width: 100%;
-    max-width: 600px;
-    max-height: 90vh;
-    overflow-y: auto;
+    max-width: 800px;
   }
 
   .header-section {
@@ -789,7 +782,6 @@
   @media (max-width: 768px) {
     .register-card {
       padding: 1.5rem;
-      margin: 0.5rem;
     }
     
     .location-selects {
