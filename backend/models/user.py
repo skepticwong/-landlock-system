@@ -1,6 +1,6 @@
 # backend/models/user.py
 from datetime import datetime
-from db.supabase import db
+from db.sqlite_db import db
 from utils.security import get_password_hash, verify_password
 
 class User:
@@ -13,8 +13,19 @@ class User:
         self.phone = kwargs.get('phone')
         self.is_active = kwargs.get('is_active', True)
         self.is_superuser = kwargs.get('is_superuser', False)
+        self.role = kwargs.get('role', 'citizen')
         self.created_at = kwargs.get('created_at', datetime.utcnow().isoformat())
         self.updated_at = kwargs.get('updated_at', datetime.utcnow().isoformat())
+
+    @property
+    def is_official(self):
+        """True for both superusers and users with role='official'."""
+        return bool(self.is_superuser) or self.role == 'official'
+
+    @property
+    def is_staff(self):
+        """Alias for is_official – kept for compatibility with frontend checks."""
+        return self.is_official
 
     @classmethod
     def from_db(cls, data):
@@ -25,22 +36,22 @@ class User:
         return cls(**data)
 
     @classmethod
-    async def get_by_id(cls, user_id: str):
+    def get_by_id(cls, user_id: str):
         result = db.select("users", eq={"id": user_id})
         return cls.from_db(result[0] if result else None)
 
     @classmethod
-    async def get_by_username(cls, username: str):
+    def get_by_username(cls, username: str):
         result = db.select("users", eq={"username": username})
         return cls.from_db(result[0] if result else None)
 
     @classmethod
-    async def get_by_email(cls, email: str):
+    def get_by_email(cls, email: str):
         result = db.select("users", eq={"email": email})
         return cls.from_db(result[0] if result else None)
 
     @classmethod
-    async def create(cls, user_data: dict):
+    def create(cls, user_data: dict):
         # Hash password
         user_data['hashed_password'] = get_password_hash(user_data.pop('password'))
         user_data['created_at'] = datetime.utcnow().isoformat()
@@ -49,7 +60,7 @@ class User:
         result = db.insert("users", [user_data])
         return cls.from_db(result[0] if result else None)
 
-    async def update(self, update_data: dict):
+    def update(self, update_data: dict):
         if 'password' in update_data:
             update_data['hashed_password'] = get_password_hash(update_data.pop('password'))
         update_data['updated_at'] = datetime.utcnow().isoformat()
@@ -76,6 +87,7 @@ class User:
             "phone": self.phone,
             "is_active": self.is_active,
             "is_superuser": self.is_superuser,
+            "role": self.role,
             "created_at": self.created_at,
             "updated_at": self.updated_at
         }

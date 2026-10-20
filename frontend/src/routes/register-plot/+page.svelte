@@ -3,6 +3,10 @@
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
   import { status } from '$lib/store';
+  import Navbar from '$lib/components/Navbar.svelte';
+  import PaymentModal from '$lib/components/PaymentModal.svelte';
+
+  const API = 'http://localhost:5000';
 
   let formData = {
     plotName: '',
@@ -15,6 +19,13 @@
   let isLoading = false;
   let error = '';
   let map: any = null;
+  
+  // Payment state
+  let showPaymentModal = false;
+  let paymentType = 'land_registration';
+  let paymentAmount = 5000;
+  let paymentDescription = 'Land Registration Fee';
+  let pendingPlotData: any = null;
 
   onMount(() => {
     if (!browser) return;
@@ -28,9 +39,23 @@
     initializeMap();
   });
 
+  import { initMap } from '$lib/map';
+  import { tick } from 'svelte';
+
   function initializeMap() {
-    // Basic map initialization - you can expand this
-    console.log('Map initialized for plot registration');
+    tick().then(async () => {
+      const mapEl = document.getElementById('location-map');
+      if (mapEl) {
+        try {
+          const mapModule = await import('$lib/map');
+          map = await mapModule.initMap(mapEl, (e: any) => {
+            formData.coordinates = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
+          });
+        } catch (err) {
+          console.error('Failed to init map in register-plot', err);
+        }
+      }
+    });
   }
 
   async function handleSubmit() {
@@ -39,22 +64,35 @@
       return;
     }
 
+    // Store plot data and show payment modal
+    pendingPlotData = {
+      plot_name: formData.plotName,
+      area: parseFloat(formData.area),
+      location: formData.location,
+      description: formData.description,
+      coordinates: formData.coordinates
+    };
+    
+    showPaymentModal = true;
+  }
+
+  async function handlePaymentCompleted(event: any) {
+    const payment = event.detail.payment;
+    
+    // Now submit the plot registration with payment info
     isLoading = true;
     error = '';
 
     try {
-      const response = await fetch('http://localhost:5000/api/plots', {
+      const response = await fetch(`${API}/api/plots`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
         body: JSON.stringify({
-          plot_name: formData.plotName,
-          area: parseFloat(formData.area),
-          location: formData.location,
-          description: formData.description,
-          coordinates: formData.coordinates
+          ...pendingPlotData,
+          payment_id: payment.id
         })
       });
 
@@ -73,6 +111,7 @@
       status.set('Registration failed: ' + err.message);
     } finally {
       isLoading = false;
+      pendingPlotData = null;
     }
   }
 
@@ -87,89 +126,101 @@
 </svelte:head>
 
 <div class="register-plot-container">
-  <div class="page-header">
-    <h1>Register New Plot</h1>
-    <p>Add your land plot to the registry</p>
-  </div>
+  <Navbar userType="official" activeLink="/register-plot" userName="Official" showNotification={false} />
 
-  {#if error}
-    <div class="error-message">
-      {error}
+  <main class="main-content">
+    <div class="page-header">
+      <h1>Register New Plot</h1>
+      <p>Add your land plot to the registry</p>
     </div>
-  {/if}
 
-  <form class="registration-form" on:submit|preventDefault={handleSubmit}>
-    <div class="form-grid">
-      <div class="form-group">
-        <label for="plotName">Plot Name *</label>
-        <input
-          id="plotName"
-          type="text"
-          bind:value={formData.plotName}
-          placeholder="Enter plot name"
-          required
-        />
+    {#if error}
+      <div class="error-message">
+        {error}
+      </div>
+    {/if}
+
+    <form class="registration-form" on:submit|preventDefault={handleSubmit}>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="plotName">Plot Name *</label>
+          <input
+            id="plotName"
+            type="text"
+            bind:value={formData.plotName}
+            placeholder="Enter plot name"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="area">Area (meters) *</label>
+          <input
+            id="area"
+            type="number"
+            bind:value={formData.area}
+            placeholder="Enter plot area"
+            step="0.01"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="location">Location</label>
+          <input
+            id="location"
+            type="text"
+            bind:value={formData.location}
+            placeholder="Village, District"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="coordinates">GPS Coordinates</label>
+          <input
+            id="coordinates"
+            type="text"
+            bind:value={formData.coordinates}
+            placeholder="Latitude, Longitude"
+          />
+        </div>
       </div>
 
       <div class="form-group">
-        <label for="area">Area (acres) *</label>
-        <input
-          id="area"
-          type="number"
-          bind:value={formData.area}
-          placeholder="Enter plot area"
-          step="0.01"
-          required
-        />
+        <label for="description">Description</label>
+        <textarea
+          id="description"
+          bind:value={formData.description}
+          placeholder="Describe the plot, landmarks, etc."
+          rows="4"
+        ></textarea>
       </div>
 
-      <div class="form-group">
-        <label for="location">Location</label>
-        <input
-          id="location"
-          type="text"
-          bind:value={formData.location}
-          placeholder="Village, District"
-        />
+      <div class="map-section" style="margin-bottom: 2rem;">
+        <h3>Select Plot Location</h3>
+        <p class="text-sm text-gray-500 mb-2">Click on the map to set the GPS coordinates for this plot.</p>
+        <div id="location-map" class="map-placeholder" style="border: 2px solid #e2e8f0; z-index: 1;">
+        </div>
       </div>
 
-      <div class="form-group">
-        <label for="coordinates">GPS Coordinates</label>
-        <input
-          id="coordinates"
-          type="text"
-          bind:value={formData.coordinates}
-          placeholder="Latitude, Longitude"
-        />
+      <div class="form-actions">
+        <button type="button" class="btn-cancel" on:click={handleCancel}>
+          Cancel
+        </button>
+        <button type="submit" class="btn-submit" disabled={isLoading}>
+          {isLoading ? 'Registering...' : 'Register Plot'}
+        </button>
       </div>
-    </div>
+    </form>
+  </main>
 
-    <div class="form-group">
-      <label for="description">Description</label>
-      <textarea
-        id="description"
-        bind:value={formData.description}
-        placeholder="Describe the plot, landmarks, etc."
-        rows="4"
-      ></textarea>
-    </div>
-
-    <div class="form-actions">
-      <button type="button" class="btn-cancel" on:click={handleCancel}>
-        Cancel
-      </button>
-      <button type="submit" class="btn-submit" disabled={isLoading}>
-        {isLoading ? 'Registering...' : 'Register Plot'}
-      </button>
-    </div>
-  </form>
-
-  <div class="map-section">
-    <h3>Select Plot Location</h3>
-    <div id="location-map" class="map-placeholder">
-      <p>Map will be displayed here for location selection</p>
-    </div>
-  </div>
+  <PaymentModal
+    bind:isOpen={showPaymentModal}
+    paymentType={paymentType}
+    amount={paymentAmount}
+    description={paymentDescription}
+    on:paymentCompleted={handlePaymentCompleted}
+  />
 </div>
 
 <style>
@@ -181,9 +232,17 @@
   }
 
   .register-plot-container {
-    max-width: 800px;
-    margin: 2rem auto;
-    padding: 0 1rem;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .main-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+    width: 100%;
+    flex: 1;
   }
 
   .page-header {
@@ -252,8 +311,8 @@
   .form-group input:focus,
   .form-group textarea:focus {
     outline: none;
-    border-color: #2563eb;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(0, 122, 61, 0.15);
   }
 
   .form-group textarea {
@@ -285,7 +344,7 @@
   .btn-submit {
     padding: 0.75rem 1.5rem;
     border: none;
-    background: #2563eb;
+    background: var(--color-primary);
     color: white;
     border-radius: 6px;
     font-weight: 500;
@@ -294,7 +353,7 @@
   }
 
   .btn-submit:hover:not(:disabled) {
-    background: #1d4ed8;
+    background: var(--color-primary-hover);
   }
 
   .btn-submit:disabled {

@@ -1,0 +1,44 @@
+LANDLOCK SAMPLE USERS CREDENTIALS
+============================================================
+
+Normal User
+  Full Name: Wongani Mkandawire 
+  Phone: 0882396866
+  Email: Wonganimka2@gmail.com
+  National ID: GY3G73T3737
+  PIN: user123
+
+Normal User
+  Full Name: Wongani Mkandawire 
+  Phone: 0882396867
+  Email: Wonganimka21@gmail.com
+  National ID: GY3G73T3734
+  PIN: user123
+
+SUPERUSER (Admin)
+  Full Name: System Administrator
+  Phone: 0999000001
+  Email: admin@landlock.mw
+  National ID: ADMIN001
+  PIN: admin123
+
+Normal User
+  Full Name: John Doe
+  Phone: 0888000001
+  Email: john.doe@example.com
+  National ID: USER001
+  PIN: user123
+
+Normal User
+  Full Name: Jane Smith
+  Phone: 0888000002
+  Email: jane.smith@example.com
+  National ID: USER002
+  PIN: user123
+
+============================================================
+LOGIN CREDENTIALS:
+SUPERUSER: Phone +265999000001, PIN: admin123
+USER 1: Phone +265888000001, PIN: user123
+USER 2: Phone +265888000002, PIN: user123
+============================================================

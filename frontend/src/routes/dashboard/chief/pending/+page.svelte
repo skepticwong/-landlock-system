@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
+  import { Smartphone, Home, Calendar, FileText, Check, X, Eye, AlertTriangle, Clipboard } from 'lucide-svelte';
 
   interface Claim {
     id: string;
@@ -24,7 +25,7 @@
       status: 'pending',
       submittedDate: '2024-11-20',
       priority: 'high',
-      description: 'Residential plot near main road, approximately 0.25 acres'
+      description: 'Residential plot near main road, approximately 20m x 20m'
     },
     {
       id: 'c2',
@@ -165,7 +166,7 @@
     
     {#if !isOnline}
       <div class="offline-indicator">
-        📱 Offline Mode - Actions will sync when connected
+        <Smartphone class="w-5 h-5 inline" /> Offline Mode - Actions will sync when connected
       </div>
     {/if}
   </div>
@@ -184,15 +185,15 @@
           <h3 class="claimant-name">{claim.claimant}</h3>
           <div class="claim-details">
             <div class="detail-item">
-              <span class="detail-label">🏘️ Village:</span>
+              <span class="detail-label"><Home class="w-4 h-4 inline" /> Village:</span>
               <span class="detail-value">{claim.village}</span>
             </div>
             <div class="detail-item">
-              <span class="detail-label">📅 Submitted:</span>
+              <span class="detail-label"><Calendar class="w-4 h-4 inline" /> Submitted:</span>
               <span class="detail-value">{formatDate(claim.submittedDate)}</span>
             </div>
             <div class="detail-item">
-              <span class="detail-label">📝 Description:</span>
+              <span class="detail-label"><FileText class="w-4 h-4 inline" /> Description:</span>
               <span class="detail-value">{claim.description}</span>
             </div>
           </div>
@@ -203,20 +204,20 @@
               on:click={() => openVerifyModal(claim)}
               disabled={!isOnline}
             >
-              ✅ Verify Claim
+              <Check class="w-4 h-4 inline" /> Verify Claim
             </button>
             <button 
               class="action-btn reject-btn"
               on:click={() => openRejectModal(claim)}
               disabled={!isOnline}
             >
-              ❌ Reject
+              <X class="w-4 h-4 inline" /> Reject
             </button>
             <button 
               class="action-btn details-btn"
               on:click={() => console.log('View details:', claim.id)}
             >
-              👁️ View Details
+              <Eye class="w-4 h-4 inline" /> View Details
             </button>
           </div>
         </div>
@@ -226,7 +227,7 @@
 
   {#if claims.length === 0}
     <div class="empty-state">
-      <div class="empty-icon">📋</div>
+      <div class="empty-icon"><Clipboard class="w-12 h-12" /></div>
       <h3>No Pending Claims</h3>
       <p>All claims have been reviewed. Check back later for new submissions.</p>
     </div>
@@ -260,7 +261,7 @@
         </div>
         
         <div class="verification-warning">
-          <p>⚠️ By verifying this claim, you confirm that:</p>
+          <AlertTriangle class="w-5 h-5 inline" /> By verifying this claim, you confirm that:
           <ul>
             <li>You have personally verified the claimant's identity</li>
             <li>The land description is accurate</li>
@@ -275,7 +276,7 @@
           Cancel
         </button>
         <button class="btn-verify" on:click={verifyClaim}>
-          ✅ Verify Claim
+          <Check class="w-4 h-4 inline" /> Verify Claim
         </button>
       </div>
     </div>
@@ -326,7 +327,7 @@
           on:click={rejectClaim}
           disabled={!rejectionReason.trim()}
         >
-          ❌ Reject Claim
+          <X class="w-4 h-4 inline" /> Reject Claim
         </button>
       </div>
     </div>
@@ -349,7 +350,7 @@
   }
 
   .back-link {
-    color: #0d9488;
+    color: var(--color-primary);
     cursor: pointer;
     font-weight: 600;
     margin-bottom: 1rem;
@@ -357,7 +358,7 @@
   }
 
   .back-link:hover {
-    color: #0b7a71;
+    color: var(--color-primary-hover);
   }
 
   .page-header h1 {
@@ -400,7 +401,7 @@
   .claim-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
-    border-color: #0d9488;
+    border-color: var(--color-primary);
   }
 
   .claim-card.offline {

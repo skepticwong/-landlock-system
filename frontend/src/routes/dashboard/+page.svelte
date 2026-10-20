@@ -2,98 +2,108 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
+  import { Hand, MapPin, Ruler, Check, Clock, AlertTriangle } from 'lucide-svelte';
+  import Navbar from '$lib/components/Navbar.svelte';
 
-  // Mock data - can be easily swapped for real backend data
-  let userData = {
-    name: 'Grace',
-    role: 'Landowner',
-    lastSeen: 'Today at 10:15 AM',
-    isOnline: true,
-    pendingSync: 0
-  };
+  const API = 'http://localhost:5000';
 
-  let summaryStats = {
-    totalParcels: 2,
-    pendingActions: 1,
-    activeDeals: 1,
-    verified: 2
-  };
+  // Real data from backend
+  let userData = { name: '', role: 'Landowner', lastSeen: 'Today', isOnline: true, pendingSync: 0 };
+  let summaryStats = { totalParcels: 0, pendingActions: 0, activeDeals: 0, verified: 0 };
+  let parcels: any[] = [];
+  let transactions: any[] = [];
+  let recentActivity: any[] = [];
+  let alerts: any[] = [];
+  let showUserMenu = false;
+  let isLoading = true;
 
-  let parcels = [
-    {
-      id: 'MLW-LIL-8821',
-      location: 'Chilomoni, Lilongwe',
-      size: 2.4,
-      status: 'verified'
-    },
-    {
-      id: 'MLW-LIL-8822',
-      location: 'Area 25, Lilongwe',
-      size: 1.8,
-      status: 'verified'
+  function authHeaders() {
+    return { 'Authorization': `Bearer ${localStorage.getItem('token')}` };
+  }
+
+  async function fetchAll() {
+    isLoading = true;
+    try {
+      const [userRes, summaryRes, parcelsRes, txRes] = await Promise.all([
+        fetch(`${API}/api/user/me`,            { headers: authHeaders() }),
+        fetch(`${API}/api/dashboard/summary`,  { headers: authHeaders() }),
+        fetch(`${API}/api/parcels`,            { headers: authHeaders() }),
+        fetch(`${API}/api/transactions`,       { headers: authHeaders() }),
+      ]);
+
+      if (userRes.ok) {
+        const u = await userRes.json();
+        userData.name = u.full_name || u.username || 'User';
+        if (u.is_superuser) {
+          if (browser) {
+            localStorage.setItem('user', JSON.stringify(u));
+          }
+          goto('/dashboard/official');
+          return;
+        }
+      }
+
+      if (summaryRes.ok) {
+        const s = await summaryRes.json();
+        summaryStats = {
+          totalParcels:   s.total_parcels   ?? 0,
+          pendingActions: s.pending_actions ?? 0,
+          activeDeals:    s.active_deals    ?? 0,
+          verified:       s.verified        ?? 0,
+        };
+        recentActivity = s.recent_activity ?? [];
+      }
+
+      if (parcelsRes.ok) {
+        parcels = await parcelsRes.json();
+      }
+
+      if (txRes.ok) {
+        const txData = await txRes.json();
+        transactions = txData;
+        // Build alerts for pending transactions that need action
+        alerts = txData
+          .filter((t: any) => t.status === 'pending' || t.status === 'awaiting_signature')
+          .map((t: any) => ({
+            parcelId: t.plot_id,
+            message:  `Action needed: ${t.transaction_type} transaction is ${t.status}`,
+            action:   'View',
+          }));
+      }
+    } catch (err) {
+      console.error('Dashboard fetch error:', err);
+    } finally {
+      isLoading = false;
     }
-  ];
-
-  let transactions = [
-    {
-      type: 'selling',
-      counterparty: 'James B.',
-      parcelId: 'MLW-LIL-8821',
-      status: 'awaiting_signature',
-      action: 'Sign Now'
-    }
-  ];
-
-  let alerts = [
-    {
-      type: 'boundary_confirmation',
-      parcelId: 'MLW-LIL-8821',
-      message: 'Confirm boundary for Plot #MLW-LIL-8821',
-      action: 'Verify'
-    }
-  ];
+  }
 
   onMount(() => {
     if (!browser) return;
-    
-    if (!localStorage.getItem('token')) {
-      goto('/login');
-      return;
-    }
+    if (!localStorage.getItem('token')) { goto('/login'); return; }
+    fetchAll();
   });
 
-  function handleQuickAction(action: string) {
-    switch(action) {
-      case 'register':
-        goto('/register');
-        break;
-      case 'sell':
-        goto('/sell-or-lease/new');
-        break;
-      case 'certificates':
-        goto('/certificates');
-        break;
-      case 'support':
-        goto('/support');
-        break;
-    }
+  function handleLogout() {
+    if (browser) { localStorage.removeItem('token'); localStorage.removeItem('user'); goto('/login'); }
   }
 
-  function handleParcelAction(parcelId: string, action: string) {
-    console.log(`Parcel ${parcelId}: ${action}`);
+  function handleTransactionAction(transactionId: string, action: string) { goto('/sell-or-lease'); }
+  function handleAlertAction(alertId: string, action: string) { goto('/sell-or-lease'); }
+  function syncNow() { fetchAll(); }
+
+  function timeAgo(isoString: string): string {
+    if (!isoString) return '';
+    const diff = Date.now() - new Date(isoString).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
   }
 
-  function handleTransactionAction(transactionId: string, action: string) {
-    console.log(`Transaction ${transactionId}: ${action}`);
-  }
-
-  function handleAlertAction(alertId: string, action: string) {
-    console.log(`Alert ${alertId}: ${action}`);
-  }
-
-  function syncNow() {
-    console.log('Syncing data...');
-    userData.pendingSync = 0;
+  function activityColor(type: string): string {
+    return type === 'plot_registered' ? 'var(--color-primary)' : 'var(--color-info)';
   }
 </script>
 
@@ -104,61 +114,14 @@
 
 <div class="dashboard">
   <!-- Top Navigation -->
-  <nav class="navbar">
-    <div class="navbar-content">
-      <div class="navbar-brand">
-        <div class="logo">
-          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="8" fill="url(#gradient)"/>
-            <path d="M16 8L22 14H18V20H14V14H10L16 8Z" fill="white"/>
-            <defs>
-              <linearGradient id="gradient" x1="0" y1="0" x2="32" y2="32">
-                <stop stop-color="#667eea"/>
-                <stop offset="1" stop-color="#764ba2"/>
-              </linearGradient>
-            </defs>
-          </svg>
-        </div>
-        <span class="brand-name">LandLock</span>
-      </div>
-      
-      <div class="navbar-menu">
-        <a href="/dashboard" class="nav-link active">
-          <span>Dashboard</span>
-        </a>
-        <a href="/register-land" class="nav-link">
-          <span>Register Land</span>
-        </a>
-        <a href="/sell-or-lease" class="nav-link">
-          <span>Sell or Lease</span>
-        </a>
-        <a href="/certificates" class="nav-link">
-          <span>Certificates</span>
-        </a>
-      </div>
-
-      <div class="navbar-actions">
-        <button class="icon-btn">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-            <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6z"/>
-            <path d="M10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
-          </svg>
-        </button>
-        <div class="user-menu">
-          <div class="avatar">
-            <span>G</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </nav>
+  <Navbar userType="citizen" activeLink="/dashboard" userName={userData.name} />
 
   <!-- Main Content -->
   <main class="main-content">
     <!-- Page Header -->
     <div class="page-header">
       <div class="header-left">
-        <h1>Welcome back, {userData.name}! 👋</h1>
+        <h1>Welcome back, {userData.name}! <Hand class="w-5 h-5 inline" /></h1>
         <p class="subtitle">{userData.role} • Last seen: {userData.lastSeen}</p>
       </div>
       <div class="header-right">
@@ -180,7 +143,7 @@
     <!-- Stats Grid -->
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+        <div class="stat-icon" style="background: #003366;">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
             <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
           </svg>
@@ -192,7 +155,7 @@
       </div>
 
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+        <div class="stat-icon" style="background: #FFC107;">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
             <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
@@ -204,7 +167,7 @@
       </div>
 
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+        <div class="stat-icon" style="background: #0D6EFD;">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
             <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
           </svg>
@@ -216,7 +179,7 @@
       </div>
 
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+        <div class="stat-icon" style="background: #007A3D;">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
             <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
@@ -247,16 +210,16 @@
                   <div class="list-item">
                     <div class="list-item-icon">
                       <svg width="40" height="40" viewBox="0 0 40 40">
-                        <rect width="40" height="40" rx="8" fill="#f0f4ff"/>
-                        <path d="M20 12L26 18H22V24H18V18H14L20 12Z" fill="#667eea"/>
+                        <rect width="40" height="40" rx="8" fill="rgba(0, 122, 61, 0.1)"/>
+                        <path d="M20 12L26 18H22V24H18V18H14L20 12Z" fill="var(--color-primary)"/>
                       </svg>
                     </div>
                     <div class="list-item-content">
                       <div class="list-item-title">{parcel.id}</div>
                       <div class="list-item-meta">
-                        <span>📍 {parcel.location}</span>
+                        <span><MapPin class="w-4 h-4 inline" /> {parcel.location}</span>
                         <span>•</span>
-                        <span>📏 {parcel.size} acres</span>
+                        <span><Ruler class="w-4 h-4 inline" /> {parcel.size || '20m x 20m'}</span>
                       </div>
                     </div>
                     <span class="badge badge-success">Verified</span>
@@ -266,8 +229,8 @@
             {:else}
               <div class="empty-state">
                 <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
-                  <circle cx="32" cy="32" r="32" fill="#f0f4ff"/>
-                  <path d="M32 20L42 30H36V40H28V30H22L32 20Z" fill="#667eea" opacity="0.5"/>
+                  <circle cx="32" cy="32" r="32" fill="rgba(0, 122, 61, 0.1)"/>
+                  <path d="M32 20L42 30H36V40H28V30H22L32 20Z" fill="var(--color-primary)" opacity="0.5"/>
                 </svg>
                 <p>No parcels registered yet</p>
                 <button class="btn btn-primary" on:click={() => goto('/register-land')}>
@@ -304,9 +267,9 @@
                       </div>
                       <div class="list-item-meta">
                         {#if transaction.status === 'awaiting_signature'}
-                          ⏳ Awaiting your signature
+                          <Clock class="w-4 h-4 inline" /> Awaiting your signature
                         {:else}
-                          ✅ Certificate ready
+                          <Check class="w-4 h-4 inline" /> Certificate ready
                         {/if}
                       </div>
                     </div>
@@ -324,7 +287,7 @@
         {#if alerts.length > 0}
           <div class="card card-warning">
             <div class="card-header">
-              <h2>⚠️ Action Required</h2>
+              <h2><AlertTriangle class="w-5 h-5 inline" /> Action Required</h2>
             </div>
             <div class="card-body">
               <div class="list">
@@ -354,7 +317,7 @@
           <div class="card-body">
             <div class="action-list">
               <a href="/register-land" class="action-item">
-                <div class="action-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <div class="action-icon" style="background: #007A3D;">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="white">
                     <path d="M10 5v10m5-5H5"/>
                   </svg>
@@ -369,7 +332,7 @@
               </a>
 
               <a href="/sell-or-lease" class="action-item">
-                <div class="action-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <div class="action-icon" style="background: #8B6F47;">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="white">
                     <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/>
                     <path fill-rule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clip-rule="evenodd"/>
@@ -385,7 +348,7 @@
               </a>
 
               <a href="/certificates" class="action-item">
-                <div class="action-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                <div class="action-icon" style="background: #003366;">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="white">
                     <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/>
                   </svg>
@@ -400,7 +363,7 @@
               </a>
 
               <a href="/support" class="action-item">
-                <div class="action-icon" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+                <div class="action-icon" style="background: #6C757D;">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="white">
                     <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
                   </svg>
@@ -423,29 +386,23 @@
             <h3>Recent Activity</h3>
           </div>
           <div class="card-body">
-            <div class="timeline">
-              <div class="timeline-item">
-                <div class="timeline-dot" style="background: #667eea;"></div>
-                <div class="timeline-content">
-                  <div class="timeline-title">Parcel verified</div>
-                  <div class="timeline-time">2 hours ago</div>
-                </div>
+            {#if recentActivity.length > 0}
+              <div class="timeline">
+                {#each recentActivity as activity (activity.created_at)}
+                  <div class="timeline-item">
+                    <div class="timeline-dot" style="background: {activityColor(activity.type)};"></div>
+                    <div class="timeline-content">
+                      <div class="timeline-title">{activity.title || activity.type}</div>
+                      <div class="timeline-time">{timeAgo(activity.created_at)}</div>
+                    </div>
+                  </div>
+                {/each}
               </div>
-              <div class="timeline-item">
-                <div class="timeline-dot" style="background: #f56565;"></div>
-                <div class="timeline-content">
-                  <div class="timeline-title">Transaction initiated</div>
-                  <div class="timeline-time">1 day ago</div>
-                </div>
+            {:else}
+              <div class="empty-state">
+                <p>No recent activity</p>
               </div>
-              <div class="timeline-item">
-                <div class="timeline-dot" style="background: #48bb78;"></div>
-                <div class="timeline-content">
-                  <div class="timeline-title">Certificate issued</div>
-                  <div class="timeline-time">3 days ago</div>
-                </div>
-              </div>
-            </div>
+            {/if}
           </div>
         </div>
       </aside>
@@ -471,116 +428,6 @@
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-  }
-
-  /* Navbar */
-  .navbar {
-    background: white;
-    border-bottom: 1px solid #e2e8f0;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
-  }
-
-  .navbar-content {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 0 2rem;
-    height: 64px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 2rem;
-  }
-
-  .navbar-brand {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .logo {
-    display: flex;
-    align-items: center;
-  }
-
-  .brand-name {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: #0f172a;
-    letter-spacing: -0.5px;
-  }
-
-  .navbar-menu {
-    display: flex;
-    gap: 0.5rem;
-    flex: 1;
-  }
-
-  .nav-link {
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    text-decoration: none;
-    color: #64748b;
-    font-weight: 500;
-    font-size: 0.9375rem;
-    transition: all 0.2s;
-    white-space: nowrap;
-  }
-
-  .nav-link:hover {
-    background: #f1f5f9;
-    color: #334155;
-  }
-
-  .nav-link.active {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-  }
-
-  .navbar-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .icon-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    border: none;
-    background: #f8fafc;
-    color: #64748b;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-  }
-
-  .icon-btn:hover {
-    background: #f1f5f9;
-    color: #334155;
-  }
-
-  .user-menu {
-    display: flex;
-    align-items: center;
-  }
-
-  .avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    font-size: 0.875rem;
-    cursor: pointer;
   }
 
   /* Main Content */
@@ -672,18 +519,19 @@
   }
 
   .btn-primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #007A3D;
     color: white;
   }
 
   .btn-primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    background: #005C2E;
+    box-shadow: 0 4px 12px rgba(0, 122, 61, 0.25);
   }
 
   .btn-secondary {
     background: white;
-    color: #667eea;
+    color: #007A3D;
     border: 1px solid #e2e8f0;
   }
 
@@ -781,7 +629,7 @@
 
   .card-warning {
     border-color: #fbbf24;
-    background: linear-gradient(to bottom, #fffbeb 0%, white 100%);
+    background: #fffbeb;
   }
 
   .card-header {
@@ -985,14 +833,6 @@
   }
 
   @media (max-width: 768px) {
-    .navbar-content {
-      padding: 0 1rem;
-    }
-
-    .navbar-menu {
-      display: none;
-    }
-
     .main-content {
       padding: 1rem;
     }

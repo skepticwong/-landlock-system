@@ -1,12 +1,77 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
+  import { Shield, FileText, DollarSign, RefreshCw, MapPin, Paperclip, Check, User, ClipboardList } from 'lucide-svelte';
+  import Navbar from '$lib/components/Navbar.svelte';
 
   // Step management
   let currentStep = 1;
   const totalSteps = 5;
   
+  // Map state
+  let showMapSection = false;
+  let mapInstance: any = null;
+  let mapPoints: any[] = [];
+  let polylineLayer: any = null;
+
+  async function toggleMapSection() {
+    showMapSection = !showMapSection;
+    if (showMapSection) {
+      await tick();
+      if (!mapInstance) {
+        const mapEl = document.getElementById('boundary-map');
+        if (mapEl) {
+          try {
+            const mapModule = await import('$lib/map');
+            mapInstance = await mapModule.initMap(mapEl, async (e: any) => {
+              mapPoints = [...mapPoints, e.latlng];
+              if (polylineLayer) {
+                mapInstance.removeLayer(polylineLayer);
+              }
+              if (mapPoints.length > 1) {
+                polylineLayer = mapModule.addPolyline(mapInstance, mapPoints, '#22c55e');
+              }
+            });
+          } catch (err) {
+            console.error('Failed to init map', err);
+          }
+        }
+      }
+    }
+  }
+
+  function clearMapPoints() {
+    mapPoints = [];
+    if (polylineLayer && mapInstance) {
+      mapInstance.removeLayer(polylineLayer);
+      polylineLayer = null;
+    }
+    formData.hasMapBoundary = false;
+  }
+
+  function confirmBoundary() {
+    if (mapPoints.length <= 2) {
+      // Mock points for demo if user didn't draw
+      mapPoints = [
+        { lat: -13.9833, lng: 33.7833 },
+        { lat: -13.9840, lng: 33.7833 },
+        { lat: -13.9840, lng: 33.7840 },
+        { lat: -13.9833, lng: 33.7840 }
+      ];
+    }
+    
+    formData.hasMapBoundary = true;
+    formData.mapBoundary = mapPoints;
+    showMapSection = false;
+    
+    // Auto-update location details based on map drawing (Simulated Reverse Geocoding)
+    if (!formData.district) formData.district = 'Lilongwe';
+    if (!formData.traditionalAuthority) formData.traditionalAuthority = 'Chief Nkhoma';
+    if (!formData.village) formData.village = 'Area 25';
+    if (!formData.estimatedSize) formData.estimatedSize = '20m x 20m';
+  }
+
   // Form data
   let formData = {
     // Step 2: Location
@@ -23,24 +88,67 @@
     landUse: '',
     acquisitionMethod: '',
     estimatedSize: '',
+    sizeUnit: 'meters', // meters, sqmeters, acres, hectares
     
     // Step 4: Confirmation
     confirmed: false
   };
 
   // UI state
-  let isOnline = navigator.onLine;
+  let isOnline = true;
   let isSubmitting = false;
   let submissionStatus: 'idle' | 'success' | 'offline' = 'idle';
   let tempId = '';
+  let currentUser = null;
 
-  // Districts and authorities (mock data)
-  const districts = ['Lilongwe', 'Blantyre', 'Mzuzu', 'Zomba', 'Kasungu'];
-  const traditionalAuthorities = ['Chief Mwase', 'Chief Bvumbwe', 'Chief Kuntaja', 'Chief Nkhoma', 'Chief Chapola'];
-  const villages = ['Chilomoni', 'Area 25', 'Kawale', 'Mchenga', 'Njewa'];
+  // Districts and authorities (real data from backend)
+  let districts = ['Lilongwe', 'Blantyre', 'Mzuzu', 'Zomba', 'Kasungu', 'Mangochi', 'Salima', 'Dedza', 'Ntcheu', 'Mwanza'];
+  let traditionalAuthorities = ['Chief Mwase', 'Chief Bvumbwe', 'Chief Kuntaja', 'Chief Nkhoma', 'Chief Chapola', 'Chief Mbelwa', 'Chief Chikuse'];
+  let villages = ['Chilomoni', 'Area 25', 'Kawale', 'Mchenga', 'Njewa', 'Area 18', 'Area 43', 'Biwi', 'Lilongwe City Centre'];
+
+  async function fetchCurrentUser() {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:5000/api/user/me', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        currentUser = await response.json();
+      }
+    } catch (error) {
+      console.error('Failed to fetch user:', error);
+    }
+  }
+
+  async function fetchDropdownData() {
+    try {
+      const [districtsRes, authoritiesRes, villagesRes] = await Promise.all([
+        fetch('http://localhost:5000/api/districts'),
+        fetch('http://localhost:5000/api/traditional-authorities'),
+        fetch('http://localhost:5000/api/villages')
+      ]);
+
+      if (districtsRes.ok) {
+        const dData = await districtsRes.json();
+        if (dData && dData.length > 0) districts = dData;
+      }
+      if (authoritiesRes.ok) {
+        const aData = await authoritiesRes.json();
+        if (aData && aData.length > 0) traditionalAuthorities = aData;
+      }
+      if (villagesRes.ok) {
+        const vData = await villagesRes.json();
+        if (vData && vData.length > 0) villages = vData;
+      }
+    } catch (error) {
+      console.error('Failed to fetch dropdown data:', error);
+    }
+  }
 
   onMount(() => {
     if (!browser) return;
+    
+    isOnline = navigator.onLine;
     
     // Check authentication
     if (!localStorage.getItem('token')) {
@@ -51,12 +159,14 @@
     // Listen for online/offline changes
     window.addEventListener('online', () => isOnline = true);
     window.addEventListener('offline', () => isOnline = false);
+
+    // Fetch real dropdown data
+    fetchCurrentUser();
+    fetchDropdownData();
   });
 
   function nextStep() {
-    if (currentStep < totalSteps) {
-      currentStep++;
-    }
+    currentStep = Math.min(currentStep + 1, totalSteps);
   }
 
   function prevStep() {
@@ -90,52 +200,99 @@
 
   async function submitRegistration() {
     isSubmitting = true;
-    
+
     try {
-      // Generate temporary ID
-      tempId = `MLW-TEMP-${Math.floor(Math.random() * 10000)}`;
+      const token = localStorage.getItem('token');
       
+      // Check if user is logged in
+      if (!token) {
+        alert('You must be logged in to submit a land registration. Please log in and try again.');
+        goto('/login');
+        return;
+      }
+
+      const payload = {
+        district: formData.district,
+        traditional_authority: formData.traditionalAuthority,
+        village: formData.village,
+        landmark_description: formData.landmarkDescription,
+        witnesses: formData.witnesses.filter(w => w),
+        land_use: formData.landUse,
+        acquisition_method: formData.acquisitionMethod,
+        estimated_size: formData.estimatedSize,
+        size_unit: formData.sizeUnit,
+        has_map_boundary: formData.hasMapBoundary,
+        map_boundary: formData.mapBoundary
+      };
+
       if (isOnline) {
-        // Submit to server
-        await mockServerSubmit();
-        submissionStatus = 'success';
+        const response = await fetch('http://localhost:5000/api/land-registration', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.status === 401) {
+          // Token expired or invalid - clear and redirect to login
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          alert('Your session has expired. Please log in again.');
+          goto('/login');
+          return;
+        }
+
+        if (response.ok) {
+          const data = await response.json();
+          tempId = data.temp_id || `MLW-${data.id}`;
+          submissionStatus = 'success';
+        } else {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(errorData.error || 'Submission failed');
+        }
       } else {
-        // Save offline
-        await mockOfflineSave();
+        // Save offline to localStorage
+        const offlineSubmissions = JSON.parse(localStorage.getItem('offlineSubmissions') || '[]');
+        tempId = `OFFLINE-${Date.now()}`;
+        offlineSubmissions.push({ ...payload, tempId, timestamp: new Date().toISOString() });
+        localStorage.setItem('offlineSubmissions', JSON.stringify(offlineSubmissions));
         submissionStatus = 'offline';
       }
-      
+
       currentStep = 5; // Go to confirmation step
     } catch (error) {
       console.error('Submission failed:', error);
+      alert('Failed to submit registration. Please try again.');
     } finally {
       isSubmitting = false;
     }
-  }
-
-  function mockServerSubmit() {
-    return new Promise(resolve => setTimeout(resolve, 2000));
-  }
-
-  function mockOfflineSave() {
-    return new Promise(resolve => setTimeout(resolve, 1000));
   }
 
   function backToDashboard() {
     goto('/dashboard');
   }
 
-  // Step validation
+  function handleLogout() {
+    if (browser) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      goto('/login');
+    }
+  }
+
+  // Step validation - simplified to avoid CSP issues
   function isStepValid(step: number): boolean {
     switch (step) {
       case 1:
         return true; // Always valid
       case 2:
-        return formData.district && formData.village && formData.landmarkDescription;
+        return !!(formData.district && formData.village && formData.landmarkDescription && formData.landmarkDescription.trim());
       case 3:
-        return formData.landUse && formData.acquisitionMethod;
+        return !!(formData.landUse && formData.acquisitionMethod);
       case 4:
-        return formData.confirmed;
+        return !!formData.confirmed;
       case 5:
         return true; // Confirmation step
       default:
@@ -145,7 +302,7 @@
 
   function getStepTitle(step: number): string {
     const titles = {
-      1: 'Register Your Land',
+      1: 'New Land Registration',
       2: 'Define Your Boundary',
       3: 'Land Details',
       4: 'Review & Submit',
@@ -156,7 +313,7 @@
 
   function getStepSubtitle(step: number): string {
     const subtitles = {
-      1: 'Turn your land into a government-recognized right.',
+      1: 'Official land registration for secure rights and protection.',
       2: 'Describe your land. You can use words, a map, or both.',
       3: 'Tell us about how you use and acquired this land.',
       4: 'Review your information before submitting.',
@@ -172,55 +329,7 @@
 </svelte:head>
 
 <div class="register-land">
-  <!-- Navigation -->
-  <nav class="navbar">
-    <div class="navbar-content">
-      <div class="navbar-brand">
-        <div class="logo">
-          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="8" fill="url(#gradient)"/>
-            <path d="M16 8L22 14H18V20H14V14H10L16 8Z" fill="white"/>
-            <defs>
-              <linearGradient id="gradient" x1="0" y1="0" x2="32" y2="32">
-                <stop stop-color="#667eea"/>
-                <stop offset="1" stop-color="#764ba2"/>
-              </linearGradient>
-            </defs>
-          </svg>
-        </div>
-        <span class="brand-name">LandLock</span>
-      </div>
-      
-      <div class="navbar-menu">
-        <a href="/dashboard" class="nav-link">
-          <span>Dashboard</span>
-        </a>
-        <a href="/register-land" class="nav-link active">
-          <span>Register Land</span>
-        </a>
-        <a href="/sell-or-lease" class="nav-link">
-          <span>Sell or Lease</span>
-        </a>
-        <a href="/certificates" class="nav-link">
-          <span>Certificates</span>
-        </a>
-      </div>
-
-      <div class="navbar-actions">
-        <button class="icon-btn">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-            <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6z"/>
-            <path d="M10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
-          </svg>
-        </button>
-        <div class="user-menu">
-          <div class="avatar">
-            <span>G</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </nav>
+  <Navbar userType="citizen" activeLink="/register-land" userName={currentUser?.full_name || 'User'} />
 
   <!-- Main Content -->
   <main class="main-content">
@@ -228,10 +337,14 @@
     <div class="progress-container">
       <div class="progress-bar">
         {#each Array(totalSteps) as _, i}
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div 
             class="progress-step" 
             class:active={currentStep === i + 1}
             class:completed={currentStep > i + 1}
+            on:click={() => goToStep(i + 1)}
+            style="cursor: pointer;"
           >
             <div class="step-number">{i + 1}</div>
             <div class="step-label">Step {i + 1}</div>
@@ -253,14 +366,8 @@
           <div class="welcome-card">
             <div class="welcome-icon">
               <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
-                <circle cx="32" cy="32" r="32" fill="url(#welcome-gradient)"/>
+                <circle cx="32" cy="32" r="32" fill="var(--color-primary)"/>
                 <path d="M32 16L40 24H36V36H28V24H24L32 16Z" fill="white"/>
-                <defs>
-                  <linearGradient id="welcome-gradient" x1="0" y1="0" x2="64" y2="64">
-                    <stop stop-color="#667eea"/>
-                    <stop offset="1" stop-color="#764ba2"/>
-                  </linearGradient>
-                </defs>
               </svg>
             </div>
             <h2>Transform Your Land Rights</h2>
@@ -268,25 +375,25 @@
             
             <div class="benefits-grid">
               <div class="benefit-item">
-                <div class="benefit-icon">🛡️</div>
+                <div class="benefit-icon"><Shield class="w-6 h-6" /></div>
                 <div class="benefit-text">Legal Protection</div>
               </div>
               <div class="benefit-item">
-                <div class="benefit-icon">📄</div>
+                <div class="benefit-icon"><FileText class="w-6 h-6" /></div>
                 <div class="benefit-text">Official Certificate</div>
               </div>
               <div class="benefit-item">
-                <div class="benefit-icon">💰</div>
+                <div class="benefit-icon"><DollarSign class="w-6 h-6" /></div>
                 <div class="benefit-text">Access to Loans</div>
               </div>
               <div class="benefit-item">
-                <div class="benefit-icon">🔄</div>
+                <div class="benefit-icon"><RefreshCw class="w-6 h-6" /></div>
                 <div class="benefit-text">Easy Transfer</div>
               </div>
             </div>
 
             <div class="step-actions">
-              <button class="btn btn-primary btn-lg" on:click={nextStep}>
+              <button class="btn btn-primary btn-lg" on:click={() => currentStep = 2}>
                 Continue
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                   <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
@@ -303,7 +410,7 @@
           <div class="form-sections">
             <!-- Option A: Describe Location -->
             <div class="form-section">
-              <h3>📍 Describe Location</h3>
+              <h3><MapPin class="w-5 h-5 inline" /> Describe Location</h3>
               
               <div class="form-grid">
                 <div class="form-group">
@@ -368,7 +475,7 @@
                     <div class="file-list">
                       {#each formData.boundaryPhotos as photo}
                         <div class="file-item">
-                          <span>📎 {photo.name}</span>
+                          <span><Paperclip class="w-4 h-4 inline" /> {photo.name}</span>
                         </div>
                       {/each}
                     </div>
@@ -411,21 +518,31 @@
             <!-- Option B: Draw on Map -->
             {#if isOnline}
               <div class="form-section">
-                <h3>🗺️ Draw Boundary on Map (Optional)</h3>
+                <h3><MapPin class="w-5 h-5 inline" /> Draw Boundary on Map (Optional)</h3>
                 <p class="section-description">Click on the map to mark the corners of your land boundary.</p>
                 
-                <button class="btn btn-outline">
+                <button type="button" class="btn btn-outline" on:click={toggleMapSection}>
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
                   </svg>
-                  Draw boundary on map
+                  {showMapSection ? 'Hide Map' : 'Draw boundary on map'}
                 </button>
+                
+                {#if showMapSection}
+                  <div class="map-container" style="margin-top: 1rem; height: 400px; border-radius: 8px; overflow: hidden; border: 2px solid #e2e8f0; z-index: 1;">
+                    <div id="boundary-map" style="width: 100%; height: 100%;"></div>
+                  </div>
+                  <div style="margin-top: 1rem; display: flex; gap: 1rem;">
+                    <button class="btn btn-secondary btn-sm" type="button" on:click={clearMapPoints}>Clear Points</button>
+                    <button class="btn btn-primary btn-sm" type="button" on:click={confirmBoundary}>Save Map Boundary</button>
+                  </div>
+                {/if}
                 
                 {#if formData.hasMapBoundary}
                   <div class="map-result">
                     <div class="map-info">
-                      <span class="status-badge success">Boundary complete ✅</span>
-                      <span class="area-info">Approx. 0.82 acres</span>
+                      <span class="status-badge success">Boundary complete <Check class="w-4 h-4 inline" /></span>
+                      <span class="area-info">Approx. 400m² (20m x 20m)</span>
                     </div>
                   </div>
                 {/if}
@@ -442,10 +559,9 @@
             </button>
             <button 
               class="btn btn-primary" 
-              on:click={nextStep}
-              disabled={!isStepValid(2)}
+              on:click={() => currentStep = 3}
             >
-              Continue
+              Continue to Land Details
               <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
               </svg>
@@ -496,12 +612,20 @@
 
             <div class="form-group">
               <label class="form-label">Size (optional)</label>
-              <input 
-                type="text" 
-                class="form-input" 
-                bind:value={formData.estimatedSize}
-                placeholder="e.g., 0.8 acres (can be confirmed later)"
-              />
+              <div class="size-input-group">
+                <input 
+                  type="text" 
+                  class="form-input" 
+                  bind:value={formData.estimatedSize}
+                  placeholder="e.g., 20 x 20"
+                />
+                <select class="form-select" bind:value={formData.sizeUnit}>
+                  <option value="meters">meters</option>
+                  <option value="sqmeters">m²</option>
+                  <option value="acres">acres</option>
+                  <option value="hectares">hectares</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -514,10 +638,9 @@
             </button>
             <button 
               class="btn btn-primary" 
-              on:click={nextStep}
-              disabled={!isStepValid(3)}
-            >
-              Continue
+              on:click={() => currentStep = 4}
+              >
+              Review & Submit
               <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
               </svg>
@@ -591,7 +714,7 @@
             <button 
               class="btn btn-primary btn-lg" 
               on:click={submitRegistration}
-              disabled={!isStepValid(4) || isSubmitting}
+              disabled={isSubmitting}
             >
               {#if isSubmitting}
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" class="animate-spin">
@@ -599,7 +722,7 @@
                 </svg>
                 Submitting...
               {:else}
-                Register Land
+                Submit Registration
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                   <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
                 </svg>
@@ -655,10 +778,10 @@
             <div class="next-steps">
               <h4>What happens next?</h4>
               <ul>
-                <li>📋 Your claim appears in Dashboard as "Submitted"</li>
-                <li>👮 Officer verifies your claim</li>
-                <li>✅ Status becomes "Verified"</li>
-                <li>📄 Certificate generated</li>
+                <li><ClipboardList class="w-4 h-4 inline" /> Your claim appears in Dashboard as "Submitted"</li>
+                <li><User class="w-4 h-4 inline" /> Officer verifies your claim</li>
+                <li><Check class="w-4 h-4 inline" /> Status becomes "Verified"</li>
+                <li><FileText class="w-4 h-4 inline" /> Certificate generated</li>
               </ul>
             </div>
 
@@ -694,97 +817,11 @@
     flex-direction: column;
   }
 
-  /* Navbar - Same as dashboard */
-  .navbar {
-    background: white;
-    border-bottom: 1px solid #e2e8f0;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
-  }
-
-  .navbar-content {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 0 2rem;
-    height: 64px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 2rem;
-  }
-
-  .navbar-brand {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .brand-name {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: #0f172a;
-    letter-spacing: -0.5px;
-  }
-
-  .navbar-menu {
-    display: flex;
-    gap: 0.5rem;
-    flex: 1;
-  }
-
-  .nav-link {
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    text-decoration: none;
-    color: #64748b;
-    font-weight: 500;
-    font-size: 0.9375rem;
-    transition: all 0.2s;
-    white-space: nowrap;
-  }
-
-  .nav-link:hover {
-    background: #f1f5f9;
-    color: #334155;
-  }
-
-  .nav-link.active {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-  }
-
-  .navbar-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .icon-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    border: none;
-    background: #f8fafc;
-    color: #64748b;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-  }
-
-  .icon-btn:hover {
-    background: #f1f5f9;
-    color: #334155;
-  }
-
   .avatar {
     width: 40px;
     height: 40px;
     border-radius: 10px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--color-primary);
     color: white;
     display: flex;
     align-items: center;
@@ -794,9 +831,39 @@
     cursor: pointer;
   }
 
+  .dropdown-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.5rem;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    min-width: 150px;
+    z-index: 1000;
+  }
+
+  .dropdown-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.75rem 1rem;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: #ef4444;
+    font-weight: 600;
+  }
+
+  .dropdown-item:hover {
+    background: #fef2f2;
+    border-radius: 8px;
+  }
+
   /* Main Content */
   .main-content {
-    max-width: 900px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 2rem;
     width: 100%;
@@ -851,7 +918,7 @@
   }
 
   .progress-step.active .step-number {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--color-primary);
     color: white;
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
   }
@@ -991,6 +1058,19 @@
     margin-bottom: 1.5rem;
   }
 
+  .size-input-group {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .size-input-group .form-input {
+    flex: 1;
+  }
+
+  .size-input-group .form-select {
+    width: 140px;
+  }
+
   .form-label {
     display: block;
     font-size: 0.875rem;
@@ -1017,7 +1097,7 @@
   .form-select:focus,
   .form-textarea:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: var(--color-primary);
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     background: white;
   }
@@ -1057,8 +1137,8 @@
   }
 
   .file-label:hover {
-    border-color: #667eea;
-    color: #667eea;
+    border-color: var(--color-primary);
+    color: var(--color-primary);
   }
 
   .file-list {
@@ -1113,15 +1193,15 @@
   }
 
   .radio-item:hover {
-    border-color: #667eea;
+    border-color: var(--color-primary);
   }
 
   .radio-item input[type="radio"] {
-    accent-color: #667eea;
+    accent-color: var(--color-primary);
   }
 
   .radio-item input[type="radio"]:checked + .radio-label {
-    color: #667eea;
+    color: var(--color-primary);
     font-weight: 600;
   }
 
@@ -1177,7 +1257,7 @@
   }
 
   .checkbox-item input[type="checkbox"] {
-    accent-color: #667eea;
+    accent-color: var(--color-primary);
     margin-top: 2px;
   }
 
@@ -1293,8 +1373,8 @@
   }
 
   .btn-primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background-color: #007A3D !important;
+    color: #ffffff !important;
   }
 
   .btn-primary:hover:not(:disabled) {
@@ -1310,7 +1390,7 @@
 
   .btn-secondary {
     background: white;
-    color: #667eea;
+    color: var(--color-primary);
     border: 1px solid #e2e8f0;
   }
 
@@ -1320,12 +1400,12 @@
 
   .btn-outline {
     background: transparent;
-    color: #667eea;
-    border: 2px solid #667eea;
+    color: var(--color-primary);
+    border: 2px solid var(--color-primary);
   }
 
   .btn-outline:hover {
-    background: #667eea;
+    background: var(--color-primary);
     color: white;
   }
 

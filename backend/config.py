@@ -18,6 +18,11 @@ class Config:
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-here")
     JWT_ALGORITHM = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES = 30
+    # SMS / USSD configuration
+    SMS_MODE = os.getenv("SMS_MODE", "mock")  # mock | africastalking | other
+    AFRICAS_TALKING_USERNAME = os.getenv("AFRICASTALKING_USERNAME")
+    AFRICAS_TALKING_API_KEY = os.getenv("AFRICASTALKING_API_KEY")
+    USSD_SHORTCODE = os.getenv("USSD_SHORTCODE", "*384#")
 
 class DevelopmentConfig(Config):
     DEBUG = True

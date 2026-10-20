@@ -2,56 +2,75 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
+  import { fade } from 'svelte/transition';
+  import { Eye, Edit, Search, ClipboardList, WifiOff, AlertTriangle, Check, X } from 'lucide-svelte';
+  import Navbar from '$lib/components/Navbar.svelte';
 
   interface Claim {
-    id: string;
+    id: number;
     parcelId: string;
+    plot_name: string;
     claimant: string;
-    village: string;
-    status: 'pending' | 'verified' | 'disputed';
+    status: 'pending' | 'approved' | 'rejected';
     submittedDate: string;
-    priority: 'high' | 'medium' | 'low';
+    approved_by: string | null;
+    approved_at: string | null;
+    points: any[];
   }
 
   let isOnline = true;
-  let claims: Claim[] = [
-    {
-      id: 'c1',
-      parcelId: 'MLW-LIL-8821',
-      claimant: 'Grace Banda',
-      village: 'Chilomoni',
-      status: 'pending',
-      submittedDate: '2024-11-20',
-      priority: 'high'
-    },
-    {
-      id: 'c2',
-      parcelId: 'MLW-TAK-5532',
-      claimant: 'James Phiri',
-      village: 'Mwase',
-      status: 'pending',
-      submittedDate: '2024-11-22',
-      priority: 'medium'
-    },
-    {
-      id: 'c3',
-      parcelId: 'MLW-BT-4412',
-      claimant: 'Village Headman Jere',
-      village: 'Chemusa',
-      status: 'disputed',
-      submittedDate: '2024-11-18',
-      priority: 'high'
-    },
-    {
-      id: 'c4',
-      parcelId: 'MLW-ZO-7789',
-      claimant: 'Mary Kachere',
-      village: 'Ndirande',
-      status: 'pending',
-      submittedDate: '2024-11-23',
-      priority: 'low'
+  let claims: Claim[] = [];
+  let isLoading = true;
+
+  async function loadClaims() {
+    try {
+      const res = await fetch(`${API}/api/official/caseload`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        claims = data;
+      }
+    } catch (err) {
+      console.error('Error loading caseload:', err);
+    } finally {
+      isLoading = false;
     }
-  ];
+  }
+
+  async function approvePlot(plotId: number) {
+    try {
+      const res = await fetch(`${API}/api/official/caseload/${plotId}/approve`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ action: 'approve' })
+      });
+      if (res.ok) {
+        await loadClaims();
+      }
+    } catch (err) {
+      console.error('Error approving plot:', err);
+    }
+  }
+
+  async function rejectPlot(plotId: number) {
+    try {
+      const res = await fetch(`${API}/api/official/caseload/${plotId}/approve`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ action: 'reject' })
+      });
+      if (res.ok) {
+        await loadClaims();
+      }
+    } catch (err) {
+      console.error('Error rejecting plot:', err);
+    }
+  }
 
   let filterStatus = 'all';
   let searchQuery = '';
@@ -67,10 +86,10 @@
   function filteredClaims() {
     return claims.filter(claim => {
       const matchesStatus = filterStatus === 'all' || claim.status === filterStatus;
-      const matchesSearch = searchQuery === '' || 
+      const matchesSearch = searchQuery === '' ||
         claim.claimant.toLowerCase().includes(searchQuery.toLowerCase()) ||
         claim.parcelId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        claim.village.toLowerCase().includes(searchQuery.toLowerCase());
+        claim.plot_name.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesStatus && matchesSearch;
     });
   }
@@ -78,33 +97,60 @@
   function getStatusColor(status: string) {
     switch (status) {
       case 'pending': return '#f59e0b';
-      case 'verified': return '#10b981';
-      case 'disputed': return '#ef4444';
+      case 'approved': return '#10b981';
+      case 'rejected': return '#ef4444';
       default: return '#6b7280';
     }
   }
 
-  function getPriorityColor(priority: string) {
-    switch (priority) {
-      case 'high': return '#ef4444';
-      case 'medium': return '#f59e0b';
-      case 'low': return '#10b981';
-      default: return '#6b7280';
-    }
+  function viewClaim(claimId: number) {
+    goto(`/dashboard/official/caseload/${claimId}`);
   }
 
-  function viewClaim(claimId: string) {
-    // TODO: Navigate to claim details
-    console.log('View claim:', claimId);
+  function timeAgo(isoString: string): string {
+    if (!isoString) return '';
+    const diff = Date.now() - new Date(isoString).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
   }
 
-  function editClaim(claimId: string) {
-    // TODO: Navigate to edit claim
-    console.log('Edit claim:', claimId);
+  const API = 'http://localhost:5000';
+
+  function authHeaders() {
+    return { 'Authorization': `Bearer ${localStorage.getItem('token')}` };
   }
 
-  onMount(() => {
+  onMount(async () => {
     if (!browser) return;
+
+    if (!localStorage.getItem('token')) {
+      goto('/login');
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API}/api/user/me`, { headers: authHeaders() });
+      if (res.ok) {
+        const u = await res.json();
+        if (!u.is_superuser && !u.is_staff) {
+          goto('/dashboard');
+          return;
+        }
+      } else {
+        goto('/login');
+        return;
+      }
+    } catch (err) {
+      console.error('Error verifying admin status:', err);
+      goto('/login');
+      return;
+    }
+
+    loadClaims();
     isOnline = navigator.onLine;
 
     window.addEventListener('online', handleOnline);
@@ -118,117 +164,130 @@
 </script>
 
 <div class="caseload-container">
-  <!-- Professional Navigation -->
-  <nav class="professional-nav">
-    <div class="nav-brand">
-      <span class="brand-text">Land Registry Official Portal</span>
-    </div>
-    <div class="nav-menu">
-      <a href="/dashboard/official" class="nav-item">Dashboard</a>
-      <a href="/dashboard/official/caseload" class="nav-item active">My Caseload</a>
-      <a href="/register-plot" class="nav-item">Registration</a>
-      <a href="/map" class="nav-item">Map View</a>
-      <a href="/profile" class="nav-item">Account</a>
-    </div>
-  </nav>
+  <Navbar userType="official" activeLink="/dashboard/official/caseload" userName="Official" showNotification={false} />
 
-  <div class="page-header">
-    <div class="header-content">
-      <h1>My Caseload</h1>
-      <p>Manage and review land claim applications</p>
-    </div>
-    
-    {#if !isOnline}
-      <div class="offline-indicator">
-        📱 Offline Mode - Limited functionality
+  <main class="main-content">
+    <div class="page-header">
+      <div class="header-content">
+        <h1>My Caseload</h1>
+        <p>Manage and review land claim applications</p>
       </div>
+      
+      {#if !isOnline}
+        <div class="offline-indicator">
+          <WifiOff size={16} style="display: inline-block; vertical-align: middle; margin-right: 0.25rem;" /> Offline Mode - Limited functionality
+        </div>
+      {/if}
+    </div>
+
+    <div class="filters-section">
+      <div class="search-bar">
+        <input
+          type="text"
+          placeholder="Search by claimant, parcel ID, or plot name..."
+          bind:value={searchQuery}
+          class="search-input"
+        />
+      </div>
+
+      <div class="filter-controls">
+        <select bind:value={filterStatus} class="filter-select">
+          <option value="all">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+    </div>
+
+    {#if isLoading}
+      <div class="loading-state">
+        <p>Loading caseload...</p>
+      </div>
+    {:else}
+      <div class="claims-grid">
+        {#each filteredClaims() as claim (claim.id)}
+          <div class="claim-card" transition:fade={{ duration: 200 }}>
+            <div class="claim-header">
+              <div class="parcel-id">{claim.parcelId}</div>
+              <div class="status-badge" style="background-color: {getStatusColor(claim.status)}">
+                {claim.status.charAt(0).toUpperCase() + claim.status.slice(1)}
+              </div>
+            </div>
+
+            <div class="claim-content">
+              <h3 class="claimant-name">{claim.claimant}</h3>
+              <div class="plot-name">{claim.plot_name}</div>
+              <div class="claim-details">
+                <div class="detail-item">
+                  <span class="detail-label">Submitted:</span>
+                  <span class="detail-value">{timeAgo(claim.submittedDate)}</span>
+                </div>
+                {#if claim.approved_by}
+                  <div class="detail-item">
+                    <span class="detail-label">Approved by:</span>
+                    <span class="detail-value">{claim.approved_by}</span>
+                  </div>
+                {/if}
+              </div>
+
+              <div class="claim-footer">
+                {#if claim.status === 'pending'}
+                  <div class="claim-actions">
+                    <button
+                      class="action-btn approve-btn"
+                      on:click={() => approvePlot(claim.id)}
+                      disabled={!isOnline}
+                    >
+                      <span class="btn-flex"><Check size={14} style="margin-right: 0.25rem;" /> Approve</span>
+                    </button>
+                    <button
+                      class="action-btn reject-btn"
+                      on:click={() => rejectPlot(claim.id)}
+                      disabled={!isOnline}
+                    >
+                      <span class="btn-flex"><X size={14} style="margin-right: 0.25rem;" /> Reject</span>
+                    </button>
+                  </div>
+                {:else}
+                  <button
+                    class="action-btn view-btn"
+                    on:click={() => viewClaim(claim.id)}
+                    disabled={!isOnline}
+                  >
+                    <span class="btn-flex"><Eye size={14} style="margin-right: 0.25rem;" /> View</span>
+                  </button>
+                {/if}
+              </div>
+            </div>
+          </div>
+        {/each}
+      </div>
+
+      {#if filteredClaims().length === 0}
+        <div class="empty-state">
+          <div class="empty-icon"><ClipboardList size={48} style="margin: 0 auto 1rem auto; color: #94a3b8;" /></div>
+          <h3>No claims found</h3>
+          <p>Try adjusting your search or filters</p>
+        </div>
+      {/if}
     {/if}
-  </div>
-
-  <div class="filters-section">
-    <div class="search-bar">
-      <input
-        type="text"
-        placeholder="Search by claimant, parcel ID, or village..."
-        bind:value={searchQuery}
-        class="search-input"
-      />
-    </div>
-    
-    <div class="filter-controls">
-      <select bind:value={filterStatus} class="filter-select">
-        <option value="all">All Status</option>
-        <option value="pending">Pending</option>
-        <option value="verified">Verified</option>
-        <option value="disputed">Disputed</option>
-      </select>
-    </div>
-  </div>
-
-  <div class="claims-grid">
-    {#each filteredClaims() as claim (claim.id)}
-      <div class="claim-card" transition:fade={{ duration: 200 }}>
-        <div class="claim-header">
-          <div class="parcel-id">{claim.parcelId}</div>
-          <div class="priority-badge" style="background-color: {getPriorityColor(claim.priority)}">
-            {claim.priority.toUpperCase()}
-          </div>
-        </div>
-        
-        <div class="claim-content">
-          <h3 class="claimant-name">{claim.claimant}</h3>
-          <div class="claim-details">
-            <div class="detail-item">
-              <span class="detail-label">Village:</span>
-              <span class="detail-value">{claim.village}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Submitted:</span>
-              <span class="detail-value">{new Date(claim.submittedDate).toLocaleDateString()}</span>
-            </div>
-          </div>
-          
-          <div class="claim-footer">
-            <div class="status-badge" style="background-color: {getStatusColor(claim.status)}">
-              {claim.status.charAt(0).toUpperCase() + claim.status.slice(1)}
-            </div>
-            
-            <div class="claim-actions">
-              <button 
-                class="action-btn view-btn"
-                on:click={() => viewClaim(claim.id)}
-                disabled={!isOnline}
-              >
-                👁️ View
-              </button>
-              <button 
-                class="action-btn edit-btn"
-                on:click={() => editClaim(claim.id)}
-                disabled={!isOnline}
-              >
-                ✏️ Edit
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    {/each}
-  </div>
-
-  {#if filteredClaims().length === 0}
-    <div class="empty-state">
-      <div class="empty-icon">📋</div>
-      <h3>No claims found</h3>
-      <p>Try adjusting your search or filters</p>
-    </div>
-  {/if}
+  </main>
 </div>
 
 <style>
   .caseload-container {
-    padding: 2rem;
-    max-width: 1200px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .main-content {
+    max-width: 1400px;
     margin: 0 auto;
+    padding: 2rem;
+    width: 100%;
+    flex: 1;
   }
 
   .page-header {
@@ -240,7 +299,7 @@
   }
 
   .back-link {
-    color: #0d9488;
+    color: var(--color-primary);
     cursor: pointer;
     font-weight: 600;
     margin-bottom: 1rem;
@@ -248,7 +307,7 @@
   }
 
   .back-link:hover {
-    color: #0b7a71;
+    color: var(--color-primary-hover);
   }
 
   .page-header h1 {
@@ -295,8 +354,8 @@
 
   .search-input:focus {
     outline: none;
-    border-color: #0d9488;
-    box-shadow: 0 0 0 3px rgba(13,148,136,0.15);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(0,122,61,0.15);
   }
 
   .filter-select {
@@ -311,7 +370,7 @@
 
   .filter-select:focus {
     outline: none;
-    border-color: #0d9488;
+    border-color: var(--color-primary);
   }
 
   .claims-grid {
@@ -332,7 +391,7 @@
   .claim-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
-    border-color: #0d9488;
+    border-color: var(--color-primary);
   }
 
   .claim-header {
@@ -361,6 +420,12 @@
     font-size: 1.25rem;
     font-weight: 600;
     color: #1e293b;
+    margin-bottom: 0.5rem;
+  }
+
+  .plot-name {
+    font-size: 0.875rem;
+    color: #64748b;
     margin-bottom: 1rem;
   }
 
@@ -409,37 +474,69 @@
     gap: 0.5rem;
   }
 
+  .btn-flex {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
   .action-btn {
-    padding: 0.5rem 0.75rem;
-    border: none;
+    padding: 0.5rem 0.875rem;
     border-radius: 6px;
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     cursor: pointer;
     transition: all 0.2s;
-    font-weight: 500;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1.5px solid transparent;
   }
 
   .action-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
   }
 
   .view-btn {
-    background: #f1f5f9;
-    color: #475569;
+    background: #1e293b;
+    color: #f8fafc;
+    border-color: #1e293b;
   }
 
   .view-btn:hover:not(:disabled) {
-    background: #e2e8f0;
+    background: #334155;
   }
 
-  .edit-btn {
-    background: #f0fdf4;
-    color: #166534;
+  .approve-btn {
+    background: #10b981;
+    color: white;
+    border-color: #10b981;
+  }
+
+  .approve-btn:hover:not(:disabled) {
+    background: #059669;
+  }
+
+  .reject-btn {
+    background: #ef4444;
+    color: white;
+    border-color: #ef4444;
+  }
+
+  .reject-btn:hover:not(:disabled) {
+    background: #dc2626;
+  }
+
+  .loading-state {
+    text-align: center;
+    padding: 4rem;
+    color: #64748b;
   }
 
   .edit-btn:hover:not(:disabled) {
-    background: #dcfce7;
+    background: #005c2e;
+    border-color: #005c2e;
   }
 
   .empty-state {
@@ -448,55 +545,9 @@
     color: #64748b;
   }
 
-  /* Professional Navigation */
-  .professional-nav {
-    background: #ffffff;
-    border-bottom: 1px solid #e5e7eb;
-    padding: 0 2rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 64px;
-    margin-bottom: 2rem;
-  }
-
-  .nav-brand {
-    display: flex;
-    align-items: center;
-  }
-
-  .brand-text {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: #111827;
-  }
-
-  .nav-menu {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .nav-item {
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    text-decoration: none;
-    font-weight: 500;
-    color: #6b7280;
-    transition: all 0.2s;
-  }
-
-  .nav-item:hover {
-    background: #f3f4f6;
-    color: #111827;
-  }
-
-  .nav-item.active {
-    background: #2563eb;
-    color: white;
-  }
-
   .empty-icon {
-    font-size: 4rem;
+    display: flex;
+    justify-content: center;
     margin-bottom: 1rem;
   }
 

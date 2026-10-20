@@ -1,0 +1,44 @@
+MANUAL INSTRUCTIONS TO CREATE SAMPLE USERS
+===========================================
+
+The automated scripts aren't producing output. Please run these commands manually:
+
+STEP 1: Check current users in database
+----------------------------------------
+cd e:\landlock-system\landlock\backend
+python check_tables.py
+
+STEP 2: Create sample users
+----------------------------
+Run this command:
+python direct_db_check.py
+
+Then check the output in db_check_output.txt
+
+STEP 3: If users don't exist, run this:
+---------------------------------------
+python insert_users_simple.py
+
+STEP 4: Verify users were created
+----------------------------------
+python check_tables.py
+
+STEP 5: Try login with these credentials:
+----------------------------------------
+SUPERUSER (Admin):
+  Phone: +265999000001
+  PIN: admin123
+
+NORMAL USER 1:
+  Phone: +265888000001
+  PIN: user123
+
+NORMAL USER 2:
+  Phone: +265888000002
+  PIN: user123
+
+If login still fails, the issue might be with the password hashing.
+The app uses bcrypt for password hashing.
+
+You can also try registering a new user through the frontend registration form
+to test if the system is working properly.

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { status } from '$lib/store';
+  import { Check, Camera, Shield } from 'lucide-svelte';
 
   let formData: {
     nationalId: string;
@@ -98,11 +99,13 @@
   let availableVillages: typeof villages.kapeni = [];
 
   function validateForm() {
-    // National ID validation - exactly 12 digits
-    if (!formData.nationalId || !/^\d{12}$/.test(formData.nationalId)) {
-      error = 'National ID must be exactly 12 digits';
+    // National ID validation - extremely permissive, just check length
+    const nid = formData.nationalId.trim();
+    if (!nid || nid.length < 1) {
+      error = 'Please enter the National ID Number';
       return false;
     }
+    formData.nationalId = nid.toUpperCase(); // Store cleaned version
 
     // Full name validation
     if (!formData.fullName || formData.fullName.trim().length < 3) {
@@ -140,8 +143,16 @@
     isLoading = true;
 
     try {
-      // Format phone number to standard format
-      const formattedPhone = formData.phone.replace(/\s/g, '').replace(/^0/, '265');
+      // Format phone number to standard local format starting with 0
+      let cleanPhone = formData.phone.replace(/\s/g, '');
+      if (cleanPhone.startsWith('+265')) {
+        cleanPhone = '0' + cleanPhone.slice(4);
+      } else if (cleanPhone.startsWith('265')) {
+        cleanPhone = '0' + cleanPhone.slice(3);
+      } else if (!cleanPhone.startsWith('0')) {
+        cleanPhone = '0' + cleanPhone;
+      }
+      const formattedPhone = cleanPhone;
 
       // Generate temporary 4-digit PIN
       generatedPin = Math.floor(1000 + Math.random() * 9000).toString();
@@ -283,7 +294,7 @@
 
     {#if showSuccess}
       <div class="success-message">
-        <div class="success-icon">✅</div>
+        <div class="success-icon"><Check class="w-8 h-8" /></div>
         <h3>Citizen Registered Successfully!</h3>
         <div class="pin-display">
           <strong>Temporary PIN:</strong> <span class="pin-number">{generatedPin}</span>
@@ -306,13 +317,12 @@
           <input
             id="nationalId"
             type="text"
-            placeholder="123456789012"
-            maxlength="12"
-            pattern="\d{12}"
+            placeholder="e.g. 8Z7X5Y2W"
+            maxlength="32"
             bind:value={formData.nationalId}
             disabled={isLoading}
           />
-          <div class="field-hint">Must be exactly 12 digits</div>
+          <div class="field-hint">Enter the ID exactly as it appears on the citizen's card</div>
         </div>
 
         <!-- Full Name -->
@@ -387,10 +397,10 @@
                   disabled={isLoading}
                 />
                 <label for="nidFront" class="photo-upload-btn" class:disabled={isLoading}>
-                  📷 Take Photo
+                  <Camera class="w-5 h-5 inline" /> Take Photo
                 </label>
                 {#if formData.nidFrontPhoto}
-                  <span class="photo-success">✅ Front photo captured</span>
+                  <span class="photo-success"><Check class="w-4 h-4 inline" /> Front photo captured</span>
                 {/if}
               </div>
               <div class="field-hint">ID number, name, photo, and expiry must be visible</div>
@@ -410,10 +420,10 @@
                   disabled={isLoading}
                 />
                 <label for="nidBack" class="photo-upload-btn" class:disabled={isLoading}>
-                  📷 Take Photo
+                  <Camera class="w-5 h-5 inline" /> Take Photo
                 </label>
                 {#if formData.nidBackPhoto}
-                  <span class="photo-success">✅ Back photo captured</span>
+                  <span class="photo-success"><Check class="w-4 h-4 inline" /> Back photo captured</span>
                 {/if}
               </div>
               <div class="field-hint">Barcode and security features must be visible</div>
@@ -466,7 +476,7 @@
     {/if}
 
     <div class="audit-notice">
-      <h4>🛡️ Security & Audit Trail</h4>
+      <h4><Shield class="w-5 h-5 inline" /> Security & Audit Trail</h4>
       <ul>
         <li>Full audit log: Officer ID, timestamp, and device recorded</li>
         <li>No edits allowed: Once registered, NID and name cannot be changed</li>
@@ -482,7 +492,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(to bottom, #f0fdf4, #e6f7ee);
+    background: var(--bg-primary);
     padding: 1rem;
   }
 
@@ -502,7 +512,7 @@
   }
 
   .back-button {
-    color: #0d9488;
+    color: var(--color-primary);
     cursor: pointer;
     font-weight: 600;
     margin-bottom: 1rem;
@@ -510,16 +520,13 @@
   }
 
   .back-button:hover {
-    color: #0b7a71;
+    color: var(--color-primary-hover);
   }
 
   .title-section h1 {
     font-size: 1.75rem;
     font-weight: 700;
-    background: linear-gradient(90deg, #0d9488, #0b7a71);
-    background-clip: text;
-    -webkit-background-clip: text;
-    color: transparent;
+    color: var(--color-primary);
     margin: 0.5rem 0;
   }
 
@@ -552,8 +559,8 @@
 
   input:focus, select:focus, textarea:focus {
     outline: none;
-    border-color: #0d9488;
-    box-shadow: 0 0 0 3px rgba(13,148,136,0.15);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(0,122,61,0.15);
   }
 
   input:disabled, select:disabled, textarea:disabled {
@@ -621,7 +628,7 @@
 
   .photo-upload-btn:hover:not(.disabled) {
     background: #e2e8f0;
-    border-color: #0d9488;
+    border-color: var(--color-primary);
   }
 
   .photo-upload-btn.disabled {
@@ -702,7 +709,7 @@
   .pin-number {
     font-size: 1.5rem;
     font-weight: 700;
-    color: #0d9488;
+    color: var(--color-primary);
     letter-spacing: 0.1em;
   }
 
@@ -715,22 +722,22 @@
   .btn-register {
     width: 100%;
     padding: 1rem;
-    background: linear-gradient(135deg, #0d9488, #0b7a71);
+    background: var(--color-primary);
     color: white;
     border: none;
     border-radius: 12px;
     font-weight: 600;
     font-size: 1rem;
     cursor: pointer;
-    box-shadow: 0 4px 10px rgba(13,148,136,0.3);
+    box-shadow: 0 4px 10px rgba(0,122,61,0.3);
     transition: all 0.2s;
     margin-top: 1rem;
   }
 
   .btn-register:hover:not(:disabled) {
-    background: linear-gradient(135deg, #0b7a71, #09615b);
+    background: var(--color-primary-hover);
     transform: translateY(-2px);
-    box-shadow: 0 6px 14px rgba(13,148,136,0.4);
+    box-shadow: 0 6px 14px rgba(0,122,61,0.4);
   }
 
   .btn-register:disabled {
