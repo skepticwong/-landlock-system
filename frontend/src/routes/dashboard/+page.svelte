@@ -1,702 +1,755 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
-  import { plots, status } from '$lib/store';
-  import { fetchPlots } from '$lib/api';
-  import { initMap } from '$lib/map';
-  import SimpleBarChart from '$lib/components/SimpleBarChart.svelte';
-  import { fade } from 'svelte/transition';
 
-  let userPlots = [];
-  let map;
-  let loading = true;
-  let mobileMenuOpen = false;
-  let stats = {
-    total: 0,
-    pending: 0,
-    approved: 0,
-    rejected: 0,
-    totalArea: 0
+  // Mock data - can be easily swapped for real backend data
+  let userData = {
+    name: 'Grace',
+    role: 'Landowner',
+    lastSeen: 'Today at 10:15 AM',
+    isOnline: true,
+    pendingSync: 0
   };
 
-  let chartData = {
-    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-    series: [
-      { values: [0, 0, 0, 0, 0, 0] }
-    ]
+  let summaryStats = {
+    totalParcels: 2,
+    pendingActions: 1,
+    activeDeals: 1,
+    verified: 2
   };
 
-  onMount(async () => {
+  let parcels = [
+    {
+      id: 'MLW-LIL-8821',
+      location: 'Chilomoni, Lilongwe',
+      size: 2.4,
+      status: 'verified'
+    },
+    {
+      id: 'MLW-LIL-8822',
+      location: 'Area 25, Lilongwe',
+      size: 1.8,
+      status: 'verified'
+    }
+  ];
+
+  let transactions = [
+    {
+      type: 'selling',
+      counterparty: 'James B.',
+      parcelId: 'MLW-LIL-8821',
+      status: 'awaiting_signature',
+      action: 'Sign Now'
+    }
+  ];
+
+  let alerts = [
+    {
+      type: 'boundary_confirmation',
+      parcelId: 'MLW-LIL-8821',
+      message: 'Confirm boundary for Plot #MLW-LIL-8821',
+      action: 'Verify'
+    }
+  ];
+
+  onMount(() => {
     if (!browser) return;
     
     if (!localStorage.getItem('token')) {
       goto('/login');
       return;
     }
-
-    try {
-      loading = true;
-      const data = await fetchPlots();
-      plots.set(data);
-      userPlots = data;
-      updateStats(data);
-      updateChartData(data);
-      setTimeout(() => {
-        initializeMap(data);
-      }, 100);
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-      status.set('Failed to load dashboard data. Please try refreshing the page.');
-      stats = { total: 0, pending: 0, approved: 0, rejected: 0, totalArea: 0 };
-      userPlots = [];
-    } finally {
-      loading = false;
-    }
   });
 
-  function updateStats(plots) {
-    const initialStats = { total: 0, pending: 0, approved: 0, rejected: 0, totalArea: 0 };
-    stats = plots.reduce((acc, plot) => {
-      acc.total++;
-      if (plot.status === 'pending' || plot.status === 'approved' || plot.status === 'rejected') {
-        acc[plot.status]++;
-      }
-      if (typeof plot.area === 'number') {
-        acc.totalArea += plot.area;
-      }
-      return acc;
-    }, { ...initialStats });
-  }
-
-  function updateChartData(plots) {
-    const monthlyCounts = Array(6).fill(0);
-    const now = new Date();
-    
-    plots.forEach(plot => {
-      const plotDate = new Date(plot.created_at);
-      const monthDiff = (now.getFullYear() - plotDate.getFullYear()) * 12 + 
-                       (now.getMonth() - plotDate.getMonth());
-      if (monthDiff >= 0 && monthDiff < 6) {
-        monthlyCounts[5 - monthDiff]++;
-      }
-    });
-
-    chartData = {
-      ...chartData,
-      values: monthlyCounts
-    };
-  }
-
-  async function initializeMap(plots) {
-    const mapElement = document.getElementById('dashboard-map');
-    if (!mapElement) return;
-
-    try {
-      // Import Leaflet dynamically
-      const leaflet = await import('leaflet');
-      const L = leaflet.default || leaflet;
-      
-      // Initialize map with default view
-      map = L.map('dashboard-map', {
-        center: [-13.9626, 33.7741],
-        zoom: 6,
-        zoomControl: true,
-        scrollWheelZoom: true
-      });
-
-      // Add OpenStreetMap tiles
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 19,
-        detectRetina: true
-      }).addTo(map);
-
-      // Add markers for each plot
-      plots.forEach(plot => {
-        if (!plot.points || plot.points.length === 0) return;
-
-        // Calculate center of the plot
-        const center = plot.points.reduce(
-          (acc, point) => {
-            acc.lat += point.lat;
-            acc.lng += point.lng;
-            return acc;
-          },
-          { lat: 0, lng: 0 }
-        );
-
-        const avgLat = center.lat / plot.points.length;
-        const avgLng = center.lng / plot.points.length;
-
-        // Create a custom icon
-        const icon = L.divIcon({
-          className: 'plot-marker',
-          html: `
-            <div class="marker-inner" style="background-color: ${
-              plot.status === 'approved' ? '#10B981' : 
-              plot.status === 'pending' ? '#F59E0B' : '#EF4444'
-            };">
-              <span>${plot.plot_name ? plot.plot_name.charAt(0).toUpperCase() : 'P'}</span>
-            </div>
-          `,
-          iconSize: [32, 32],
-          iconAnchor: [16, 32],
-          popupAnchor: [0, -32]
-        });
-
-        // Create marker with custom icon
-        const marker = L.marker([avgLat, avgLng], { icon });
-
-        // Add popup with plot information
-        const popupContent = `
-          <div class="popup-content">
-            <h4 class="font-bold text-lg mb-1">${plot.plot_name || 'Unnamed Plot'}</h4>
-            <div class="flex items-center gap-2 mb-2">
-              <span class="status-badge status-${plot.status}" style="display: inline-flex;">
-                ${plot.status.charAt(0).toUpperCase() + plot.status.slice(1)}
-              </span>
-            </div>
-            ${plot.area ? `<p class="text-sm text-gray-600">Area: ${formatArea(plot.area)}</p>` : ''}
-            <a href="/plots/${plot.id}" class="text-emerald-600 hover:underline text-sm font-medium mt-2 inline-block">
-              View Details →
-            </a>
-          </div>
-        `;
-
-        marker.bindPopup(popupContent, {
-          maxWidth: 300,
-          minWidth: 250,
-          className: 'plot-popup'
-        }).addTo(map);
-      });
-
-      // Fit bounds to show all markers if there are any plots
-      if (plots.length > 0 && plots.some(plot => plot.points && plot.points.length > 0)) {
-        const markers = plots
-          .filter(plot => plot.points && plot.points.length > 0)
-          .map(plot => {
-            const center = plot.points.reduce(
-              (acc, point) => {
-                acc.lat += point.lat;
-                acc.lng += point.lng;
-                return acc;
-              },
-              { lat: 0, lng: 0 }
-            );
-            return [center.lat / plot.points.length, center.lng / plot.points.length];
-          });
-        
-        // Add some padding around the bounds
-        map.fitBounds(markers, { 
-          padding: [50, 50],
-          maxZoom: 15
-        });
-      }
-    } catch (error) {
-      console.error('Error initializing map:', error);
-      status.set('Failed to load map. Please try refreshing the page.');
+  function handleQuickAction(action: string) {
+    switch(action) {
+      case 'register':
+        goto('/register');
+        break;
+      case 'sell':
+        goto('/sell-or-lease/new');
+        break;
+      case 'certificates':
+        goto('/certificates');
+        break;
+      case 'support':
+        goto('/support');
+        break;
     }
   }
 
-  function formatArea(area) {
-    if (typeof area !== 'number' || isNaN(area) || area <= 0) return '0 acres';
-    return `${area.toFixed(2)} acres`;
+  function handleParcelAction(parcelId: string, action: string) {
+    console.log(`Parcel ${parcelId}: ${action}`);
   }
 
-  function logout() {
-    if (browser) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-    }
-    goto('/login');
+  function handleTransactionAction(transactionId: string, action: string) {
+    console.log(`Transaction ${transactionId}: ${action}`);
   }
 
-  function toggleMobileMenu() {
-    mobileMenuOpen = !mobileMenuOpen;
+  function handleAlertAction(alertId: string, action: string) {
+    console.log(`Alert ${alertId}: ${action}`);
   }
 
-  function closeMobileMenu() {
-    mobileMenuOpen = false;
+  function syncNow() {
+    console.log('Syncing data...');
+    userData.pendingSync = 0;
   }
 </script>
 
 <svelte:head>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <title>Citizen Dashboard - LandLock</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </svelte:head>
 
-<div class="dashboard-wrapper">
-  <!-- Mobile Header -->
-  <header class="mobile-header">
-    <button class="menu-toggle" on:click={toggleMobileMenu} aria-label="Toggle menu">
-      <span></span>
-      <span></span>
-      <span></span>
-    </button>
-    <div class="mobile-logo">
-      <span class="logo-icon">🌍</span>
-      <span class="logo-text">LandLock</span>
-    </div>
-    <div class="mobile-spacer"></div>
-  </header>
+<div class="dashboard">
+  <!-- Top Navigation -->
+  <nav class="navbar">
+    <div class="navbar-content">
+      <div class="navbar-brand">
+        <div class="logo">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <rect width="32" height="32" rx="8" fill="url(#gradient)"/>
+            <path d="M16 8L22 14H18V20H14V14H10L16 8Z" fill="white"/>
+            <defs>
+              <linearGradient id="gradient" x1="0" y1="0" x2="32" y2="32">
+                <stop stop-color="#667eea"/>
+                <stop offset="1" stop-color="#764ba2"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <span class="brand-name">LandLock</span>
+      </div>
+      
+      <div class="navbar-menu">
+        <a href="/dashboard" class="nav-link active">
+          <span>Dashboard</span>
+        </a>
+        <a href="/register-land" class="nav-link">
+          <span>Register Land</span>
+        </a>
+        <a href="/sell-or-lease" class="nav-link">
+          <span>Sell or Lease</span>
+        </a>
+        <a href="/certificates" class="nav-link">
+          <span>Certificates</span>
+        </a>
+      </div>
 
-  <!-- Overlay for mobile menu -->
-  {#if mobileMenuOpen}
-    <div class="overlay" on:click={closeMobileMenu} transition:fade={{ duration: 200 }}></div>
-  {/if}
-
-  <!-- Sidebar Navigation -->
-  <aside class="sidebar" class:open={mobileMenuOpen}>
-    <div class="sidebar-header">
-      <div class="logo">
-        <span class="logo-icon">🌍</span>
-        <span class="logo-text">LandLock</span>
+      <div class="navbar-actions">
+        <button class="icon-btn">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6z"/>
+            <path d="M10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
+          </svg>
+        </button>
+        <div class="user-menu">
+          <div class="avatar">
+            <span>G</span>
+          </div>
+        </div>
       </div>
     </div>
-
-    <nav class="sidebar-nav">
-      <a href="/dashboard" class="nav-item active" on:click={closeMobileMenu}>
-        <span class="nav-icon">📊</span>
-        <span>Dashboard</span>
-      </a>
-      <a href="/dashboard/register-citizen" class="nav-item" on:click={closeMobileMenu}>
-        <span class="nav-icon">👥</span>
-        <span>Register Citizen</span>
-      </a>
-      <a href="/register-plot" class="nav-item" on:click={closeMobileMenu}>
-        <span class="nav-icon">➕</span>
-        <span>Register Plot</span>
-      </a>
-      <a href="/plots" class="nav-item" on:click={closeMobileMenu}>
-        <span class="nav-icon">📋</span>
-        <span>My Plots</span>
-      </a>
-      <a href="/map" class="nav-item" on:click={closeMobileMenu}>
-        <span class="nav-icon">🗺️</span>
-        <span>Map View</span>
-      </a>
-      <a href="/profile" class="nav-item" on:click={closeMobileMenu}>
-        <span class="nav-icon">👤</span>
-        <span>Profile</span>
-      </a>
-    </nav>
-
-    <div class="sidebar-footer">
-      <button on:click={logout} class="logout-btn">
-        <span>🚪</span>
-        <span>Logout</span>
-      </button>
-    </div>
-  </aside>
+  </nav>
 
   <!-- Main Content -->
   <main class="main-content">
-    <div class="content-header">
-      <div>
-        <h1 class="page-title">Dashboard</h1>
-        <p class="page-subtitle">Welcome back! Here's your land registry overview.</p>
+    <!-- Page Header -->
+    <div class="page-header">
+      <div class="header-left">
+        <h1>Welcome back, {userData.name}! 👋</h1>
+        <p class="subtitle">{userData.role} • Last seen: {userData.lastSeen}</p>
+      </div>
+      <div class="header-right">
+        {#if userData.isOnline}
+          <div class="status-badge success">
+            <div class="status-dot"></div>
+            <span>All synced</span>
+          </div>
+        {:else}
+          <div class="status-badge warning">
+            <div class="status-dot"></div>
+            <span>{userData.pendingSync} pending</span>
+          </div>
+          <button class="btn btn-primary" on:click={syncNow}>Sync Now</button>
+        {/if}
       </div>
     </div>
 
-    {#if loading}
-      <div class="loading-state">
-        <div class="spinner"></div>
-        <p>Loading dashboard...</p>
-      </div>
-    {:else}
-      <!-- Stats Grid -->
-      <div class="stats-grid">
-        <div class="stat-card stat-primary">
-          <div class="stat-icon">📋</div>
-          <div class="stat-content">
-            <div class="stat-value">{stats.total}</div>
-            <div class="stat-label">Total Plots</div>
-          </div>
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+            <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+          </svg>
         </div>
-
-        <div class="stat-card stat-warning">
-          <div class="stat-icon">⏳</div>
-          <div class="stat-content">
-            <div class="stat-value">{stats.pending}</div>
-            <div class="stat-label">Pending</div>
-          </div>
-        </div>
-
-        <div class="stat-card stat-success">
-          <div class="stat-icon">✅</div>
-          <div class="stat-content">
-            <div class="stat-value">{stats.approved}</div>
-            <div class="stat-label">Approved</div>
-          </div>
-        </div>
-
-        <div class="stat-card stat-info">
-          <div class="stat-icon">📐</div>
-          <div class="stat-content">
-            <div class="stat-value">{formatArea(stats.totalArea)}</div>
-            <div class="stat-label">Total Area</div>
-          </div>
+        <div class="stat-content">
+          <div class="stat-value">{summaryStats.totalParcels}</div>
+          <div class="stat-label">Total Parcels</div>
         </div>
       </div>
 
-      <!-- Content Grid -->
-      <div class="content-grid">
-        <!-- Recent Plots -->
-        <div class="card recent-plots">
+      <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </div>
+        <div class="stat-content">
+          <div class="stat-value">{summaryStats.pendingActions}</div>
+          <div class="stat-label">Pending Actions</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+            <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+          </svg>
+        </div>
+        <div class="stat-content">
+          <div class="stat-value">{summaryStats.activeDeals}</div>
+          <div class="stat-label">Active Deals</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </div>
+        <div class="stat-content">
+          <div class="stat-value">{summaryStats.verified}</div>
+          <div class="stat-label">Verified</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Content Grid -->
+    <div class="content-grid">
+      <!-- Main Column -->
+      <div class="main-column">
+        <!-- Your Parcels -->
+        <div class="card">
           <div class="card-header">
-            <h2>Recent Plots</h2>
+            <h2>Your Parcels</h2>
+            <button class="btn btn-secondary btn-sm" on:click={() => goto('/register-land')}>
+              + Add New
+            </button>
           </div>
-          <div class="plot-list">
-            {#if userPlots.length === 0}
-              <div class="empty-state">
-                <p>No plots found.</p>
-                <a href="/register-plot" class="link">Register your first plot</a>
+          <div class="card-body">
+            {#if parcels.length > 0}
+              <div class="list">
+                {#each parcels as parcel (parcel.id)}
+                  <div class="list-item">
+                    <div class="list-item-icon">
+                      <svg width="40" height="40" viewBox="0 0 40 40">
+                        <rect width="40" height="40" rx="8" fill="#f0f4ff"/>
+                        <path d="M20 12L26 18H22V24H18V18H14L20 12Z" fill="#667eea"/>
+                      </svg>
+                    </div>
+                    <div class="list-item-content">
+                      <div class="list-item-title">{parcel.id}</div>
+                      <div class="list-item-meta">
+                        <span>📍 {parcel.location}</span>
+                        <span>•</span>
+                        <span>📏 {parcel.size} acres</span>
+                      </div>
+                    </div>
+                    <span class="badge badge-success">Verified</span>
+                  </div>
+                {/each}
               </div>
             {:else}
-              {#each userPlots.slice(0, 5) as plot}
-                <a href={`/plots/${plot.id}`} class="plot-item">
-                  <div class="plot-info">
-                    <div class="plot-name">{plot.plot_name || 'Unnamed Plot'}</div>
-                    <div class="plot-date">{new Date(plot.created_at).toLocaleDateString()}</div>
-                    {#if plot.area}
-                      <div class="plot-area">Area: {formatArea(plot.area)}</div>
-                    {/if}
-                  </div>
-                  <span class="status-badge status-{plot.status}">
-                    {plot.status}
-                  </span>
-                </a>
-              {/each}
+              <div class="empty-state">
+                <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+                  <circle cx="32" cy="32" r="32" fill="#f0f4ff"/>
+                  <path d="M32 20L42 30H36V40H28V30H22L32 20Z" fill="#667eea" opacity="0.5"/>
+                </svg>
+                <p>No parcels registered yet</p>
+                <button class="btn btn-primary" on:click={() => goto('/register-land')}>
+                  Register Your First Parcel
+                </button>
+              </div>
             {/if}
           </div>
-          {#if userPlots.length > 0}
-            <div class="card-footer">
-              <a href="/plots" class="link">View all plots →</a>
-            </div>
-          {/if}
         </div>
 
-        <!-- Sidebar Content -->
-        <div class="sidebar-content">
-          <!-- Quick Actions -->
-          <div class="card quick-actions">
+        <!-- Active Transactions -->
+        {#if transactions.length > 0}
+          <div class="card">
             <div class="card-header">
-              <h2>Quick Actions</h2>
+              <h2>Active Transactions</h2>
             </div>
+            <div class="card-body">
+              <div class="list">
+                {#each transactions as transaction (transaction.parcelId)}
+                  <div class="list-item highlight">
+                    <div class="list-item-icon">
+                      <svg width="40" height="40" viewBox="0 0 40 40">
+                        <rect width="40" height="40" rx="8" fill="#fff5f5"/>
+                        <path d="M20 14V26M14 20H26" stroke="#f56565" stroke-width="2" stroke-linecap="round"/>
+                      </svg>
+                    </div>
+                    <div class="list-item-content">
+                      <div class="list-item-title">
+                        {#if transaction.type === 'selling'}
+                          Selling to {transaction.counterparty}
+                        {:else}
+                          Bought Plot #{transaction.parcelId}
+                        {/if}
+                      </div>
+                      <div class="list-item-meta">
+                        {#if transaction.status === 'awaiting_signature'}
+                          ⏳ Awaiting your signature
+                        {:else}
+                          ✅ Certificate ready
+                        {/if}
+                      </div>
+                    </div>
+                    <button class="btn btn-primary btn-sm" on:click={() => handleTransactionAction(transaction.parcelId, transaction.action)}>
+                      {transaction.action}
+                    </button>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Alerts -->
+        {#if alerts.length > 0}
+          <div class="card card-warning">
+            <div class="card-header">
+              <h2>⚠️ Action Required</h2>
+            </div>
+            <div class="card-body">
+              <div class="list">
+                {#each alerts as alert (alert.parcelId)}
+                  <div class="list-item">
+                    <div class="list-item-content">
+                      <div class="list-item-title">{alert.message}</div>
+                    </div>
+                    <button class="btn btn-warning btn-sm" on:click={() => handleAlertAction(alert.parcelId, alert.action)}>
+                      {alert.action}
+                    </button>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <!-- Quick Actions -->
+        <div class="card">
+          <div class="card-header">
+            <h3>Quick Actions</h3>
+          </div>
+          <div class="card-body">
             <div class="action-list">
-              <a href="/register-plot" class="action-item action-primary">
-                <span class="action-icon">➕</span>
-                <span>Register New Plot</span>
+              <a href="/register-land" class="action-item">
+                <div class="action-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="white">
+                    <path d="M10 5v10m5-5H5"/>
+                  </svg>
+                </div>
+                <div class="action-content">
+                  <div class="action-title">Register Land</div>
+                  <div class="action-desc">Add new parcel</div>
+                </div>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" opacity="0.3">
+                  <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                </svg>
               </a>
-              <a href="/profile" class="action-item action-secondary">
-                <span class="action-icon">👤</span>
-                <span>Update Profile</span>
+
+              <a href="/sell-or-lease" class="action-item">
+                <div class="action-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="white">
+                    <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/>
+                    <path fill-rule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clip-rule="evenodd"/>
+                  </svg>
+                </div>
+                <div class="action-content">
+                  <div class="action-title">Sell or Lease</div>
+                  <div class="action-desc">View transactions</div>
+                </div>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" opacity="0.3">
+                  <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                </svg>
               </a>
-              <a href="/help" class="action-item action-tertiary">
-                <span class="action-icon">❓</span>
-                <span>Get Help</span>
+
+              <a href="/certificates" class="action-item">
+                <div class="action-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="white">
+                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/>
+                  </svg>
+                </div>
+                <div class="action-content">
+                  <div class="action-title">My Certificates</div>
+                  <div class="action-desc">View documents</div>
+                </div>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" opacity="0.3">
+                  <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                </svg>
+              </a>
+
+              <a href="/support" class="action-item">
+                <div class="action-icon" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="white">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+                  </svg>
+                </div>
+                <div class="action-content">
+                  <div class="action-title">Get Support</div>
+                  <div class="action-desc">Help & assistance</div>
+                </div>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" opacity="0.3">
+                  <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                </svg>
               </a>
             </div>
           </div>
+        </div>
 
-          <!-- Chart -->
-          <div class="card chart-card">
-            <div class="card-header">
-              <h2>Monthly Registrations</h2>
-            </div>
-            <div class="chart-container">
-              <SimpleBarChart 
-                data={chartData.series[0].values} 
-                labels={chartData.labels} 
-                barColor="#0d9488"
-                height="200px"
-              />
+        <!-- Recent Activity -->
+        <div class="card">
+          <div class="card-header">
+            <h3>Recent Activity</h3>
+          </div>
+          <div class="card-body">
+            <div class="timeline">
+              <div class="timeline-item">
+                <div class="timeline-dot" style="background: #667eea;"></div>
+                <div class="timeline-content">
+                  <div class="timeline-title">Parcel verified</div>
+                  <div class="timeline-time">2 hours ago</div>
+                </div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot" style="background: #f56565;"></div>
+                <div class="timeline-content">
+                  <div class="timeline-title">Transaction initiated</div>
+                  <div class="timeline-time">1 day ago</div>
+                </div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot" style="background: #48bb78;"></div>
+                <div class="timeline-content">
+                  <div class="timeline-title">Certificate issued</div>
+                  <div class="timeline-time">3 days ago</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- Map -->
-      <div class="card map-card">
-        <div class="card-header">
-          <h2>Your Plots on Map</h2>
-          <a href="/map" class="link">View Full Map →</a>
-        </div>
-        <div id="dashboard-map" class="map-container"></div>
-      </div>
-    {/if}
+      </aside>
+    </div>
   </main>
 </div>
 
 <style>
-  :global(body) {
+  :global(*) {
     margin: 0;
     padding: 0;
-    font-family: 'Inter', sans-serif;
-    background: #f8faf9;
+    box-sizing: border-box;
   }
 
-  /* Layout */
-  .dashboard-wrapper {
-    display: flex;
+  :global(body) {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+    background: #f8fafc;
+    color: #1e293b;
+    line-height: 1.5;
+  }
+
+  .dashboard {
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
   }
 
-  /* Mobile Header */
-  .mobile-header {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 60px;
+  /* Navbar */
+  .navbar {
     background: white;
     border-bottom: 1px solid #e2e8f0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+  }
+
+  .navbar-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    height: 64px;
+    display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 1rem;
-    z-index: 1001;
+    gap: 2rem;
   }
 
-  .menu-toggle {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 8px;
-  }
-
-  .menu-toggle span {
-    width: 24px;
-    height: 3px;
-    background: #0d9488;
-    border-radius: 2px;
-    transition: all 0.3s;
-  }
-
-  .mobile-logo {
+  .navbar-brand {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-  }
-
-  .mobile-spacer {
-    width: 40px;
-  }
-
-  /* Overlay */
-  .overlay {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 999;
-  }
-
-  /* Sidebar */
-  .sidebar {
-    width: 260px;
-    background: white;
-    border-right: 1px solid #e2e8f0;
-    display: flex;
-    flex-direction: column;
-    position: fixed;
-    height: 100vh;
-    left: 0;
-    top: 0;
-    z-index: 1000;
-    transition: transform 0.3s ease;
-  }
-
-  .sidebar-header {
-    padding: 1.5rem;
-    border-bottom: 1px solid #e2e8f0;
+    gap: 0.75rem;
   }
 
   .logo {
     display: flex;
     align-items: center;
+  }
+
+  .brand-name {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: -0.5px;
+  }
+
+  .navbar-menu {
+    display: flex;
+    gap: 0.5rem;
+    flex: 1;
+  }
+
+  .nav-link {
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    text-decoration: none;
+    color: #64748b;
+    font-weight: 500;
+    font-size: 0.9375rem;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .nav-link:hover {
+    background: #f1f5f9;
+    color: #334155;
+  }
+
+  .nav-link.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+  }
+
+  .navbar-actions {
+    display: flex;
+    align-items: center;
     gap: 0.75rem;
   }
 
-  .logo-icon {
+  .icon-btn {
     width: 40px;
     height: 40px;
-    background: linear-gradient(135deg, #0d9488, #10b981);
-    border-radius: 10px;
+    border-radius: 8px;
+    border: none;
+    background: #f8fafc;
+    color: #64748b;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.5rem;
-    box-shadow: 0 4px 8px rgba(13, 148, 136, 0.2);
-  }
-
-  .logo-text {
-    font-size: 1.25rem;
-    font-weight: 700;
-    background: linear-gradient(90deg, #0d9488, #10b981);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .sidebar-nav {
-    flex: 1;
-    padding: 1rem;
-    overflow-y: auto;
-  }
-
-  .nav-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    border-radius: 10px;
-    color: #64748b;
-    text-decoration: none;
-    font-weight: 500;
-    margin-bottom: 0.25rem;
     transition: all 0.2s;
   }
 
-  .nav-item:hover {
+  .icon-btn:hover {
     background: #f1f5f9;
-    color: #0d9488;
+    color: #334155;
   }
 
-  .nav-item.active {
-    background: linear-gradient(135deg, #0d9488, #10b981);
-    color: white;
-    box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
-  }
-
-  .nav-icon {
-    font-size: 1.25rem;
-  }
-
-  .sidebar-footer {
-    padding: 1rem;
-    border-top: 1px solid #e2e8f0;
-  }
-
-  .logout-btn {
-    width: 100%;
+  .user-menu {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    border: none;
-    background: #fee2e2;
-    color: #dc2626;
-    border-radius: 10px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
   }
 
-  .logout-btn:hover {
-    background: #fecaca;
+  .avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.875rem;
+    cursor: pointer;
   }
 
   /* Main Content */
   .main-content {
-    flex: 1;
-    margin-left: 260px;
+    max-width: 1400px;
+    margin: 0 auto;
     padding: 2rem;
-    max-width: calc(100vw - 260px);
+    width: 100%;
   }
 
-  .content-header {
-    margin-bottom: 2rem;
-  }
-
-  .page-title {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #1e293b;
-    margin: 0 0 0.5rem 0;
-  }
-
-  .page-subtitle {
-    color: #64748b;
-    font-size: 1rem;
-  }
-
-  /* Loading */
-  .loading-state {
+  /* Page Header */
+  .page-header {
     display: flex;
-    flex-direction: column;
+    justify-content: space-between;
     align-items: center;
-    justify-content: center;
-    padding: 4rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
     gap: 1rem;
+  }
+
+  .header-left h1 {
+    font-size: 1.875rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 0.25rem;
+  }
+
+  .subtitle {
     color: #64748b;
+    font-size: 0.9375rem;
   }
 
-  .spinner {
-    width: 48px;
-    height: 48px;
-    border: 4px solid #e2e8f0;
-    border-top-color: #0d9488;
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .status-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .status-badge.success {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .status-badge.warning {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    animation: spin 1s linear infinite;
+    background: currentColor;
+    animation: pulse 2s infinite;
   }
 
-  @keyframes spin {
-    to { transform: rotate(360deg); }
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 0.625rem 1.25rem;
+    border-radius: 8px;
+    border: none;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  }
+
+  .btn-secondary {
+    background: white;
+    color: #667eea;
+    border: 1px solid #e2e8f0;
+  }
+
+  .btn-secondary:hover {
+    background: #f8fafc;
+  }
+
+  .btn-warning {
+    background: #fbbf24;
+    color: #78350f;
+  }
+
+  .btn-warning:hover {
+    background: #f59e0b;
+  }
+
+  .btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
   }
 
   /* Stats Grid */
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 1.5rem;
     margin-bottom: 2rem;
   }
 
   .stat-card {
     background: white;
-    border-radius: 16px;
+    border-radius: 12px;
     padding: 1.5rem;
+    border: 1px solid #e2e8f0;
     display: flex;
     align-items: center;
     gap: 1rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-    border: 1px solid #e2e8f0;
-    transition: all 0.3s;
+    transition: all 0.2s;
   }
 
   .stat-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 16px rgba(0,0,0,0.08);
+    border-color: #cbd5e1;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    transform: translateY(-2px);
   }
 
   .stat-icon {
     width: 48px;
     height: 48px;
-    border-radius: 12px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.5rem;
     flex-shrink: 0;
   }
 
-  .stat-primary .stat-icon { background: #e0f2f1; }
-  .stat-warning .stat-icon { background: #fff4e6; }
-  .stat-success .stat-icon { background: #dcfce7; }
-  .stat-info .stat-icon { background: #dbeafe; }
+  .stat-content {
+    flex: 1;
+  }
 
   .stat-value {
-    font-size: 1.875rem;
+    font-size: 2rem;
     font-weight: 700;
-    color: #1e293b;
+    color: #0f172a;
+    line-height: 1;
+    margin-bottom: 0.25rem;
   }
 
   .stat-label {
@@ -709,389 +762,255 @@
   .content-grid {
     display: grid;
     grid-template-columns: 1fr 380px;
+    gap: 2rem;
+  }
+
+  .main-column {
+    display: flex;
+    flex-direction: column;
     gap: 1.5rem;
-    margin-bottom: 2rem;
   }
 
   /* Card */
   .card {
     background: white;
-    border-radius: 16px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    border-radius: 12px;
     border: 1px solid #e2e8f0;
     overflow: hidden;
   }
 
+  .card-warning {
+    border-color: #fbbf24;
+    background: linear-gradient(to bottom, #fffbeb 0%, white 100%);
+  }
+
   .card-header {
-    padding: 1.25rem 1.5rem;
+    padding: 1.5rem;
     border-bottom: 1px solid #e2e8f0;
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
 
-  .card-header h2 {
+  .card-header h2,
+  .card-header h3 {
     font-size: 1.125rem;
-    font-weight: 600;
-    color: #1e293b;
-    margin: 0;
+    font-weight: 700;
+    color: #0f172a;
   }
 
-  .card-footer {
-    padding: 1rem 1.5rem;
-    border-top: 1px solid #e2e8f0;
-    text-align: right;
+  .card-body {
+    padding: 1.5rem;
   }
 
-  /* Plot List */
-  .plot-list {
-    padding: 0.5rem;
-  }
-
-  .plot-item {
+  /* List */
+  .list {
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .list-item {
+    display: flex;
     align-items: center;
+    gap: 1rem;
     padding: 1rem;
-    border-radius: 12px;
-    margin-bottom: 0.5rem;
-    text-decoration: none;
-    color: inherit;
+    border-radius: 8px;
+    background: #f8fafc;
     transition: all 0.2s;
   }
 
-  .plot-item:hover {
-    background: #f8faf9;
+  .list-item:hover {
+    background: #f1f5f9;
   }
 
-  .plot-name {
+  .list-item.highlight {
+    background: #fef3f2;
+    border: 1px solid #fecaca;
+  }
+
+  .list-item-icon {
+    flex-shrink: 0;
+  }
+
+  .list-item-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .list-item-title {
     font-weight: 600;
-    color: #1e293b;
+    color: #0f172a;
     margin-bottom: 0.25rem;
   }
 
-  .plot-date, .plot-area {
+  .list-item-meta {
     font-size: 0.875rem;
     color: #64748b;
-  }
-
-  .status-badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: capitalize;
-    white-space: nowrap;
-  }
-
-  .status-pending { background: #fef3c7; color: #92400e; }
-  .status-approved { background: #dcfce7; color: #166534; }
-  .status-rejected { background: #fee2e2; color: #991b1b; }
-
-  .empty-state {
-    padding: 2rem;
-    text-align: center;
-    color: #64748b;
-  }
-  
-  /* Map Container */
-  .map-container {
-    height: 400px;
-    width: 100%;
-    border-radius: 0 0 16px 16px;
-    overflow: hidden;
-  }
-  
-  .map-card {
-    margin-bottom: 2rem;
-  }
-
-  /* Map Marker Styles */
-  .plot-marker {
-    background: none !important;
-    border: none !important;
-  }
-
-  .marker-inner {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: bold;
-    font-size: 14px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-    border: 2px solid white;
-    transition: all 0.2s ease;
+    gap: 0.5rem;
   }
 
-  .marker-inner:hover {
-    transform: scale(1.1);
-    z-index: 1000;
-  }
-
-  /* Popup Styles */
-  .plot-popup {
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-    border: none;
-    padding: 0;
-    overflow: hidden;
-  }
-
-  .plot-popup .leaflet-popup-content-wrapper {
-    padding: 0;
-    border-radius: 12px;
-    overflow: hidden;
-  }
-
-  .plot-popup .leaflet-popup-content {
-    margin: 0;
-    width: 100% !important;
-  }
-
-  .popup-content {
-    padding: 1rem;
-  }
-
-  .plot-popup .leaflet-popup-tip {
-    background: white;
-    box-shadow: -1px -1px 2px rgba(0,0,0,0.1);
-  }
-
-  .status-badge {
+  /* Badge */
+  .badge {
     padding: 0.25rem 0.75rem;
-    border-radius: 9999px;
+    border-radius: 6px;
     font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: capitalize;
+    font-weight: 700;
+    text-transform: uppercase;
     white-space: nowrap;
   }
 
-  .status-pending { background: #fef3c7; color: #92400e; }
-  .status-approved { background: #dcfce7; color: #166534; }
-  .status-rejected { background: #fee2e2; color: #991b1b; }
+  .badge-success {
+    background: #dcfce7;
+    color: #166534;
+  }
 
-  /* Quick Actions */
+  /* Empty State */
+  .empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+  }
+
+  .empty-state svg {
+    margin-bottom: 1rem;
+  }
+
+  .empty-state p {
+    color: #64748b;
+    margin-bottom: 1.5rem;
+    font-size: 1rem;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* Action List */
   .action-list {
-    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
   .action-item {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 1rem;
     padding: 1rem;
-    border-radius: 12px;
+    border-radius: 8px;
+    background: #f8fafc;
     text-decoration: none;
-    font-weight: 500;
-    margin-bottom: 0.5rem;
     transition: all 0.2s;
   }
 
+  .action-item:hover {
+    background: #f1f5f9;
+    transform: translateX(4px);
+  }
+
   .action-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.25rem;
+    flex-shrink: 0;
   }
 
-  .action-primary {
-    background: linear-gradient(135deg, #0d9488, #10b981);
-    color: white;
+  .action-content {
+    flex: 1;
   }
 
-  .action-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
-  }
-
-  .action-secondary {
-    background: #f1f5f9;
-    color: #475569;
-  }
-
-  .action-secondary:hover {
-    background: #e2e8f0;
-  }
-
-  .action-tertiary {
-    background: #fef3c7;
-    color: #92400e;
-  }
-
-  .action-tertiary:hover {
-    background: #fde68a;
-  }
-
-  /* Map */
-  .map-card {
-    height: 400px;
-  }
-
-  .map-container {
-    height: calc(100% - 60px);
-  }
-
-  #dashboard-map {
-    width: 100%;
-    height: 100%;
-  }
-
-  :global(.leaflet-container) {
-    height: 100% !important;
-  }
-
-  /* Chart */
-  .chart-container {
-    padding: 1.5rem;
-  }
-
-  /* Links */
-  .link {
-    color: #0d9488;
-    text-decoration: none;
+  .action-title {
     font-weight: 600;
-    font-size: 0.875rem;
+    color: #0f172a;
+    font-size: 0.9375rem;
   }
 
-  .link:hover {
-    text-decoration: underline;
+  .action-desc {
+    font-size: 0.8125rem;
+    color: #64748b;
   }
 
-  /* Responsive - Tablet */
-  @media (max-width: 1200px) {
+  /* Timeline */
+  .timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .timeline-item {
+    display: flex;
+    gap: 1rem;
+  }
+
+  .timeline-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-top: 4px;
+    flex-shrink: 0;
+  }
+
+  .timeline-content {
+    flex: 1;
+  }
+
+  .timeline-title {
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 0.9375rem;
+    margin-bottom: 0.125rem;
+  }
+
+  .timeline-time {
+    font-size: 0.8125rem;
+    color: #94a3b8;
+  }
+
+  /* Responsive */
+  @media (max-width: 1024px) {
     .content-grid {
       grid-template-columns: 1fr;
-    }
-    
-    .stats-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  /* Responsive - Mobile */
-  @media (max-width: 768px) {
-    .mobile-header {
-      display: flex;
-    }
-
-    .overlay {
-      display: block;
     }
 
     .sidebar {
-      transform: translateX(-100%);
-    }
-
-    .sidebar.open {
-      transform: translateX(0);
-    }
-
-    .main-content {
-      margin-left: 0;
-      margin-top: 60px;
-      max-width: 100vw;
-      padding: 1rem;
-    }
-
-    .page-title {
-      font-size: 1.5rem;
-    }
-
-    .page-subtitle {
-      font-size: 0.875rem;
-    }
-
-    .stats-grid {
-      grid-template-columns: 1fr;
-      gap: 1rem;
-    }
-
-    .stat-card {
-      padding: 1.25rem;
-    }
-
-    .stat-value {
-      font-size: 1.5rem;
-    }
-
-    .content-grid {
-      gap: 1rem;
-    }
-
-    .card-header {
-      padding: 1rem;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-    }
-
-    .plot-item {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.75rem;
-    }
-
-    .status-badge {
-      align-self: flex-start;
-    }
-
-    .map-card {
-      height: 300px;
-    }
-
-    .action-item {
-      padding: 0.875rem;
-    }
-
-    .chart-container {
-      padding: 1rem;
+      order: -1;
     }
   }
 
-  /* Responsive - Small Mobile */
-  @media (max-width: 480px) {
+  @media (max-width: 768px) {
+    .navbar-content {
+      padding: 0 1rem;
+    }
+
+    .navbar-menu {
+      display: none;
+    }
+
     .main-content {
-      padding: 0.75rem;
+      padding: 1rem;
     }
 
-    .content-header {
-      margin-bottom: 1.5rem;
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
     }
 
-    .page-title {
-      font-size: 1.25rem;
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
     }
+  }
 
-    .stat-icon {
-      width: 40px;
-      height: 40px;
-      font-size: 1.25rem;
-    }
-
-    .stat-value {
-      font-size: 1.25rem;
-    }
-
-    .stat-label {
-      font-size: 0.75rem;
-    }
-
-    .card-header h2 {
-      font-size: 1rem;
-    }
-
-    .plot-name {
-      font-size: 0.9rem;
-    }
-
-    .plot-date, .plot-area {
-      font-size: 0.75rem;
+  @media (max-width: 480px) {
+    .stats-grid {
+      grid-template-columns: 1fr;
     }
   }
 </style>
