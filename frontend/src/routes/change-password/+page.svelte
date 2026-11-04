@@ -48,7 +48,7 @@
 <main>
   <form on:submit|preventDefault={changePassword}>
     <h1>Create a new password</h1>
-    <p>After three failed attempts, you must choose a new password.</p>
+    <p>Choose a new password for your account.</p>
     <label for="password">New password</label>
     <input id="password" type="password" autocomplete="new-password" minlength="8" bind:value={password} />
     <label for="confirm-password">Confirm new password</label>

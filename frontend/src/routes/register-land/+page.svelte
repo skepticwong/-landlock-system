@@ -225,6 +225,15 @@
         map_boundary: formData.mapBoundary
       };
 
+      const boundaryPhotos = await Promise.all(
+        formData.boundaryPhotos.map((file: File) => new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({ name: file.name, data_url: reader.result });
+          reader.readAsDataURL(file);
+        }))
+      );
+      Object.assign(payload, { boundary_photos: boundaryPhotos });
+
       if (isOnline) {
         const response = await fetch('http://localhost:5000/api/land-registration', {
           method: 'POST',
@@ -461,7 +470,7 @@
                     type="file" 
                     id="boundary-photos" 
                     multiple 
-                    accept="image/*"
+                    accept="image/*,video/*"
                     on:change={handlePhotoUpload}
                     class="file-input"
                   />

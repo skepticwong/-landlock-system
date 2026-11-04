@@ -3,6 +3,8 @@
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
   import { Smartphone, Home, Calendar, FileText, Check, X, Eye, AlertTriangle, Clipboard } from 'lucide-svelte';
+  import Navbar from '$lib/components/Navbar.svelte';
+  const API = 'http://localhost:5000';
 
   interface Claim {
     id: string;
@@ -16,48 +18,33 @@
   }
 
   let isOnline = true;
-  let claims: Claim[] = [
-    {
-      id: 'c1',
-      parcelId: 'MLW-LIL-8821',
-      claimant: 'Grace Banda',
-      village: 'Chilomoni',
-      status: 'pending',
-      submittedDate: '2024-11-20',
-      priority: 'high',
-      description: 'Residential plot near main road, approximately 20m x 20m'
-    },
-    {
-      id: 'c2',
-      parcelId: 'MLW-TAK-5532',
-      claimant: 'James Phiri',
-      village: 'Mwase',
-      status: 'pending',
-      submittedDate: '2024-11-22',
-      priority: 'medium',
-      description: 'Agricultural land for maize cultivation'
-    },
-    {
-      id: 'c4',
-      parcelId: 'MLW-ZO-7789',
-      claimant: 'Mary Kachere',
-      village: 'Ndirande',
-      status: 'pending',
-      submittedDate: '2024-11-23',
-      priority: 'low',
-      description: 'Small garden plot behind family home'
-    },
-    {
-      id: 'c5',
-      parcelId: 'MLW-KS-1122',
-      claimant: 'John Banda',
-      village: 'Lilongwe',
-      status: 'pending',
-      submittedDate: '2024-11-24',
-      priority: 'high',
-      description: 'Commercial plot near market area'
+  let claims: Claim[] = [];
+  let loadingClaims = true;
+  let loadError = '';
+
+  async function loadJurisdictionClaims() {
+    try {
+      const response = await fetch(`${API}/api/chief/pending-claims`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not load claims');
+      claims = data.map((plot: any) => ({
+        id: String(plot.id),
+        parcelId: `MLW-${String(plot.id).padStart(4, '0')}`,
+        claimant: plot.owner_name || plot.plot_name || 'Unknown claimant',
+        village: plot.village || plot.traditional_authority || plot.district || 'Unknown',
+        status: 'pending',
+        submittedDate: plot.created_at || new Date().toISOString(),
+        priority: plot.priority || 'medium',
+        description: plot.description || plot.landmark_description || 'No description provided'
+      }));
+    } catch (err) {
+      loadError = err instanceof Error ? err.message : 'Could not load claims';
+    } finally {
+      loadingClaims = false;
     }
-  ];
+  }
 
   let selectedClaim: Claim | null = null;
   let showVerifyModal = false;
@@ -143,6 +130,7 @@
   onMount(() => {
     if (!browser) return;
     isOnline = navigator.onLine;
+    loadJurisdictionClaims();
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -152,9 +140,15 @@
       window.removeEventListener('offline', handleOffline);
     };
   });
+
+  function viewClaimDetails(claim: Claim) {
+    const numericId = String(claim.id).match(/\d+/)?.[0];
+    if (numericId) goto(`/dashboard/chief/pending/${numericId}`);
+  }
 </script>
 
 <div class="pending-container">
+  <Navbar userType="chief" activeLink="/dashboard/chief/pending" showNotification={false} />
   <div class="page-header">
     <div class="header-content">
       <div class="back-link" on:click={() => goto('/dashboard/chief')}>
@@ -171,6 +165,11 @@
     {/if}
   </div>
 
+  {#if loadingClaims}
+    <div class="empty-state"><p>Loading claims in your jurisdiction...</p></div>
+  {:else if loadError}
+    <div class="empty-state"><p>{loadError}</p></div>
+  {:else}
   <div class="claims-grid">
     {#each claims as claim (claim.id)}
       <div class="claim-card" class:offline={!isOnline}>
@@ -215,7 +214,7 @@
             </button>
             <button 
               class="action-btn details-btn"
-              on:click={() => console.log('View details:', claim.id)}
+              on:click={() => viewClaimDetails(claim)}
             >
               <Eye class="w-4 h-4 inline" /> View Details
             </button>
@@ -231,6 +230,7 @@
       <h3>No Pending Claims</h3>
       <p>All claims have been reviewed. Check back later for new submissions.</p>
     </div>
+  {/if}
   {/if}
 </div>
 

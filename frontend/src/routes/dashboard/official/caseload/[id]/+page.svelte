@@ -1,301 +1,353 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import { browser } from '$app/environment';
-  import { ArrowLeft, MapPin, Calendar, User, Shield, Check, X, FileText } from 'lucide-svelte';
+  import { onMount, tick } from "svelte";
+  import { browser } from "$app/environment";
+  import { page } from "$app/stores";
+  import { goto } from "$app/navigation";
+  import {
+    ArrowLeft,
+    MapPin,
+    Calendar,
+    User,
+    Shield,
+    Check,
+    X,
+    FileText,
+    Image,
+    Ruler,
+  } from "lucide-svelte";
+  import Navbar from "$lib/components/Navbar.svelte";
 
-  let claim = null;
-  let isLoading = true;
-  let error = null;
-  let isOnline = true;
-
-  const API = 'http://localhost:5000';
+  const API = "http://localhost:5000";
+  let claim: any = null;
+  let loading = true;
+  let error = "";
+  let map: any;
 
   function authHeaders() {
-    return { 'Authorization': `Bearer ${localStorage.getItem('token')}` };
+    return { Authorization: `Bearer ${localStorage.getItem("token")}` };
   }
 
   async function fetchClaimDetails() {
-    isLoading = true;
     try {
-      const claimId = $page.params.id;
-      const response = await fetch(`${API}/api/official/caseload`, {
-        headers: authHeaders()
-      });
-
-      if (response.ok) {
-        const claims = await response.json();
-        claim = claims.find(c => c.id === parseInt(claimId));
-        if (!claim) {
-          error = 'Claim not found';
-        }
-      } else {
-        error = 'Failed to fetch claim details';
-      }
+      const response = await fetch(
+        `${API}/api/official/caseload/${$page.params.id}`,
+        {
+          headers: authHeaders(),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(data.error || "Could not load claim details");
+      claim = data;
+      await renderMap();
     } catch (err) {
-      console.error('Error fetching claim:', err);
-      error = 'Failed to fetch claim details';
+      error =
+        err instanceof Error ? err.message : "Failed to fetch claim details";
     } finally {
-      isLoading = false;
+      loading = false;
     }
   }
 
-  async function approveClaim() {
-    if (!confirm('Are you sure you want to approve this claim?')) return;
+  async function renderMap() {
+    if (!browser || !claim?.points?.length) return;
+    await tick();
+    const mapElement = document.getElementById("claim-map");
+    if (!mapElement) return;
+    const L = (await import("leaflet")).default;
+    if (map) map.remove();
+    map = L.map(mapElement, { scrollWheelZoom: false });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+    const coordinates = claim.points.map((point: any) => [
+      Number(point.lat),
+      Number(point.lng),
+    ]);
+    const polygon = L.polygon(coordinates, {
+      color: "#007A3D",
+      weight: 3,
+      fillOpacity: 0.25,
+    }).addTo(map);
+    polygon.bindPopup(claim.plot_name || "Claimed boundary");
+    map.fitBounds(polygon.getBounds(), { padding: [20, 20] });
+  }
+
+  async function decide(action: "approve" | "reject") {
+    if (!confirm(`Are you sure you want to ${action} this claim?`)) return;
 
     try {
-      const response = await fetch(`${API}/api/official/caseload/${claim.id}/approve`, {
-        method: 'POST',
-        headers: {
-          ...authHeaders(),
-          'Content-Type': 'application/json'
+      const response = await fetch(
+        `${API}/api/official/caseload/${claim.id}/approve`,
+        {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ action }),
         },
-        body: JSON.stringify({ action: 'approve' })
-      });
+      );
 
       if (response.ok) {
-        alert('Claim approved successfully');
+        alert(
+          `Claim ${action === "approve" ? "approved" : "rejected"} successfully`,
+        );
         await fetchClaimDetails();
       } else {
-        alert('Failed to approve claim');
+        alert(`Failed to ${action} claim`);
       }
     } catch (err) {
-      console.error('Error approving claim:', err);
-      alert('Failed to approve claim');
+      console.error(`Error ${action} claim:`, err);
+      alert(`Failed to ${action} claim`);
     }
   }
 
-  async function rejectClaim() {
-    if (!confirm('Are you sure you want to reject this claim?')) return;
-
-    try {
-      const response = await fetch(`${API}/api/official/caseload/${claim.id}/approve`, {
-        method: 'POST',
-        headers: {
-          ...authHeaders(),
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ action: 'reject' })
-      });
-
-      if (response.ok) {
-        alert('Claim rejected successfully');
-        await fetchClaimDetails();
-      } else {
-        alert('Failed to reject claim');
-      }
-    } catch (err) {
-      console.error('Error rejecting claim:', err);
-      alert('Failed to reject claim');
-    }
-  }
+  const approveClaim = () => decide("approve");
+  const rejectClaim = () => decide("reject");
 
   function goBack() {
-    goto('/dashboard/official/caseload');
+    goto("/dashboard/official/caseload");
   }
 
   function formatDate(dateString: string): string {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
+    if (!dateString) return "N/A";
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     });
   }
 
   function getStatusColor(status: string): string {
     switch (status) {
-      case 'approved': return '#16a34a';
-      case 'rejected': return '#dc2626';
-      case 'pending': return '#f59e0b';
-      default: return '#6b7280';
+      case "approved":
+        return "#16a34a";
+      case "rejected":
+        return "#dc2626";
+      case "pending":
+        return "#f59e0b";
+      default:
+        return "#6b7280";
     }
   }
 
+  function mediaUrl(path: string) {
+    return path?.startsWith("/uploads/")
+      ? `${API}${path}`
+      : `${API}/uploads/${path}`;
+  }
+
   onMount(() => {
-    if (!browser) return;
-    
-    isOnline = navigator.onLine;
-    window.addEventListener('online', () => isOnline = true);
-    window.addEventListener('offline', () => isOnline = false);
-
-    if (!localStorage.getItem('token')) {
-      goto('/login');
-      return;
+    if (!browser) return undefined;
+    if (!localStorage.getItem("token")) {
+      goto("/login");
+      return undefined;
     }
-
     fetchClaimDetails();
+    return () => map?.remove();
   });
 </script>
 
 <svelte:head>
-  <title>Claim Details - LandLock</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{claim?.plot_name || "Claim Details"} - LandLock Official</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
 </svelte:head>
 
-<div class="claim-details-page">
-  <!-- Navigation -->
-  <nav class="navbar">
-    <div class="navbar-content">
-      <div class="navbar-brand">
-        <div class="logo">
-          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="6" fill="#007A3D"/>
-            <path d="M16 8L22 14H18V20H14V14H10L16 8Z" fill="white"/>
-          </svg>
-        </div>
-        <span class="brand-name">LandLock Official Portal</span>
-      </div>
-      
-      <div class="navbar-menu">
-        <a href="/dashboard/official" class="nav-link">Dashboard</a>
-        <a href="/dashboard/official/caseload" class="nav-link active">My Caseload</a>
-        <a href="/register-plot" class="nav-link">Land Registration</a>
-        <a href="/map" class="nav-link">Map View</a>
-        <a href="/profile" class="nav-link">Account</a>
-      </div>
+<Navbar
+  userType="official"
+  activeLink="/dashboard/official/caseload"
+  showNotification={false}
+/>
 
-      <div class="navbar-actions">
-        <button class="icon-btn">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-            <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6z"/>
-            <path d="M10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
-          </svg>
-        </button>
-        <div class="avatar">
-          <span>O</span>
-        </div>
-      </div>
-    </div>
-  </nav>
+<main class="main-content">
+  <button class="back-button" on:click={goBack}>
+    <ArrowLeft size={20} />
+    <span>Back to Caseload</span>
+  </button>
 
-  <!-- Main Content -->
-  <main class="main-content">
-    <div class="back-button" on:click={goBack}>
-      <ArrowLeft size={20} />
-      <span>Back to Caseload</span>
-    </div>
-
-    {#if isLoading}
-      <div class="loading-state">
-        <p>Loading claim details...</p>
-      </div>
-    {:else if error}
-      <div class="error-state">
-        <p>{error}</p>
-      </div>
-    {:else if claim}
-      <div class="claim-details-container">
-        <!-- Claim Header -->
-        <div class="claim-header">
-          <div class="header-left">
-            <h1>Claim Details</h1>
-            <div class="parcel-id">{claim.parcelId}</div>
+  {#if loading}
+    <div class="loading-state"><p>Loading complete claim details...</p></div>
+  {:else if error}
+    <div class="error-state"><p>{error}</p></div>
+  {:else if claim}
+    <div class="claim-details-container">
+      <!-- Claim Header -->
+      <div class="claim-header">
+        <div class="header-left">
+          <div
+            class="status-badge"
+            style="background-color: {getStatusColor(claim.status)}"
+          >
+            {(claim.status || "pending").charAt(0).toUpperCase() +
+              (claim.status || "").slice(1)}
           </div>
-          <div class="header-right">
-            <div class="status-badge" style="background-color: {getStatusColor(claim.status)}">
-              {claim.status.charAt(0).toUpperCase() + claim.status.slice(1)}
-            </div>
+          <h1>{claim.plot_name || "Claim Details"}</h1>
+          <div class="parcel-id">
+            MLW-{claim.id} &middot; Submitted {formatDate(claim.created_at)}
           </div>
         </div>
 
-        <!-- Claim Information -->
-        <div class="claim-info-grid">
-          <div class="info-card">
-            <div class="info-card-header">
-              <User size={20} />
-              <h3>Claimant Information</h3>
-            </div>
-            <div class="info-card-content">
-              <div class="info-row">
-                <span class="label">Name:</span>
-                <span class="value">{claim.claimant}</span>
-              </div>
-              <div class="info-row">
-                <span class="label">Submitted:</span>
-                <span class="value">{formatDate(claim.submittedDate)}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="info-card">
-            <div class="info-card-header">
-              <FileText size={20} />
-              <h3>Plot Information</h3>
-            </div>
-            <div class="info-card-content">
-              <div class="info-row">
-                <span class="label">Plot Name:</span>
-                <span class="value">{claim.plot_name}</span>
-              </div>
-              <div class="info-row">
-                <span class="label">Status:</span>
-                <span class="value">{claim.status}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Map Boundary -->
-        <div class="map-section">
-          <div class="section-header">
-            <MapPin size={20} />
-            <h3>Boundary Points</h3>
-          </div>
-          <div class="boundary-points">
-            {#if claim.points && claim.points.length > 0}
-              <div class="points-list">
-                {#each claim.points as point, i}
-                  <div class="point-item">
-                    <span class="point-number">{i + 1}</span>
-                    <span class="point-coords">Lat: {point.lat.toFixed(6)}, Lng: {point.lng.toFixed(6)}</span>
-                  </div>
-                {/each}
-              </div>
-            {:else}
-              <p>No boundary points available</p>
-            {/if}
-          </div>
-        </div>
-
-        <!-- Approval Information -->
-        {#if claim.approved_by || claim.approved_at}
-          <div class="approval-section">
-            <div class="section-header">
-              <Shield size={20} />
-              <h3>Approval Information</h3>
-            </div>
-            <div class="approval-info">
-              <div class="info-row">
-                <span class="label">Approved By:</span>
-                <span class="value">{claim.approved_by || 'N/A'}</span>
-              </div>
-              <div class="info-row">
-                <span class="label">Approved At:</span>
-                <span class="value">{formatDate(claim.approved_at)}</span>
-              </div>
-            </div>
-          </div>
-        {/if}
-
-        <!-- Actions -->
-        {#if claim.status === 'pending'}
+        {#if claim.status === "pending"}
           <div class="actions-section">
-            <button class="btn btn-approve" on:click={approveClaim} disabled={!isOnline}>
-              <Check size={18} />
-              <span>Approve Claim</span>
+            <button class="btn btn-approve" on:click={approveClaim}>
+              <Check size={18} /><span>Approve Claim</span>
             </button>
-            <button class="btn btn-reject" on:click={rejectClaim} disabled={!isOnline}>
-              <X size={18} />
-              <span>Reject Claim</span>
+            <button class="btn btn-reject" on:click={rejectClaim}>
+              <X size={18} /><span>Reject Claim</span>
             </button>
           </div>
         {/if}
       </div>
-    {/if}
-  </main>
-</div>
+
+      <!-- Map -->
+      <article class="panel wide">
+        <div class="section-header">
+          <MapPin size={20} />
+          <h3>Boundary Map</h3>
+        </div>
+        {#if claim.points?.length}
+          <div id="claim-map"></div>
+          <div class="points-list">
+            {#each claim.points as point, i}
+              <div class="point-item">
+                <span class="point-number">{i + 1}</span>
+                <span class="point-coords"
+                  >Lat: {Number(point.lat).toFixed(6)}, Lng: {Number(
+                    point.lng,
+                  ).toFixed(6)}</span
+                >
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <p class="empty">No map boundary was submitted for this claim.</p>
+        {/if}
+      </article>
+
+      <!-- Claimant -->
+      <div class="claim-info-grid">
+        <article class="panel">
+          <div class="section-header">
+            <User size={20} />
+            <h3>Claimant Information</h3>
+          </div>
+          <dl>
+            <dt>Name</dt>
+            <dd>
+              {claim.owner?.full_name || claim.claimant || "Not recorded"}
+            </dd>
+            <dt>Phone</dt>
+            <dd>{claim.owner?.phone || claim.owner_phone || "Not recorded"}</dd>
+            <dt>Email</dt>
+            <dd>{claim.owner?.email || "Not recorded"}</dd>
+          </dl>
+        </article>
+
+        <article class="panel">
+          <div class="section-header">
+            <Ruler size={20} />
+            <h3>Plot Size & Location</h3>
+          </div>
+          <dl>
+            <dt>Estimated size</dt>
+            <dd>
+              {claim.estimated_size || "Not recorded"}
+              {claim.size_unit || ""}
+            </dd>
+            <dt>District</dt>
+            <dd>{claim.district || "Not recorded"}</dd>
+            <dt>Traditional authority</dt>
+            <dd>{claim.traditional_authority || "Not recorded"}</dd>
+            <dt>Village</dt>
+            <dd>{claim.village || claim.location || "Not recorded"}</dd>
+            <dt>Land use</dt>
+            <dd>{claim.land_use || "Not recorded"}</dd>
+          </dl>
+        </article>
+      </div>
+
+      <!-- Registration details -->
+      <article class="panel wide">
+        <div class="section-header">
+          <FileText size={20} />
+          <h3>Registration Details</h3>
+        </div>
+        <dl class="two-column">
+          <div>
+            <dt>Acquisition method</dt>
+            <dd>{claim.acquisition_method || "Not recorded"}</dd>
+          </div>
+          <div>
+            <dt>Landmark</dt>
+            <dd>{claim.landmark_description || "Not recorded"}</dd>
+          </div>
+          <div>
+            <dt>Map boundary</dt>
+            <dd>{claim.has_map_boundary ? "Provided" : "Not provided"}</dd>
+          </div>
+          <div>
+            <dt>Submitted</dt>
+            <dd>{formatDate(claim.created_at)}</dd>
+          </div>
+          <div class="span">
+            <dt>Description</dt>
+            <dd>{claim.description || "No description provided."}</dd>
+          </div>
+          <div class="span">
+            <dt>Witnesses</dt>
+            <dd>
+              {Array.isArray(claim.witnesses)
+                ? claim.witnesses.join(", ") || "None recorded"
+                : claim.witnesses || "None recorded"}
+            </dd>
+          </div>
+        </dl>
+      </article>
+
+      <!-- Media -->
+      <article class="panel wide">
+        <div class="section-header">
+          <Image size={20} />
+          <h3>Photos & Videos</h3>
+        </div>
+        {#if claim.media?.length}
+          <div class="media-grid">
+            {#each claim.media as media}
+              <figure>
+                {#if media.media_type === "video"}
+                  <video controls src={mediaUrl(media.file_path)}
+                    ><track kind="captions" /></video
+                  >
+                {:else}
+                  <img src={mediaUrl(media.file_path)} alt={media.file_name} />
+                {/if}
+                <figcaption>{media.file_name}</figcaption>
+              </figure>
+            {/each}
+          </div>
+        {:else}
+          <p class="empty">No photos or videos were attached to this claim.</p>
+        {/if}
+      </article>
+
+      <!-- Approval Information -->
+      {#if claim.approved_by_name || claim.approved_at}
+        <article class="panel wide">
+          <div class="section-header">
+            <Shield size={20} />
+            <h3>Approval Information</h3>
+          </div>
+          <dl>
+            <dt>Approved By</dt>
+            <dd>{claim.approved_by_name || "N/A"}</dd>
+            <dt>Approved At</dt>
+            <dd>{formatDate(claim.approved_at)}</dd>
+          </dl>
+        </article>
+      {/if}
+    </div>
+  {/if}
+</main>
 
 <style>
   :global(*) {
@@ -303,127 +355,19 @@
     padding: 0;
     box-sizing: border-box;
   }
-
   :global(body) {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+      sans-serif;
     background: #f8fafc;
     color: #1e293b;
     line-height: 1.5;
   }
 
-  .claim-details-page {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* Navbar */
-  .navbar {
-    background: white;
-    border-bottom: 1px solid #e2e8f0;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
-  }
-
-  .navbar-content {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 0 2rem;
-    height: 64px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 2rem;
-  }
-
-  .navbar-brand {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .brand-name {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: #0f172a;
-    letter-spacing: -0.5px;
-  }
-
-  .navbar-menu {
-    display: flex;
-    gap: 0.5rem;
-    flex: 1;
-  }
-
-  .nav-link {
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    text-decoration: none;
-    color: #64748b;
-    font-weight: 500;
-    font-size: 0.9375rem;
-    transition: all 0.2s;
-    white-space: nowrap;
-  }
-
-  .nav-link:hover {
-    background: #f1f5f9;
-    color: #334155;
-  }
-
-  .nav-link.active {
-    background: #007A3D;
-    color: white;
-  }
-
-  .navbar-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .icon-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    border: none;
-    background: #f8fafc;
-    color: #64748b;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-  }
-
-  .icon-btn:hover {
-    background: #f1f5f9;
-    color: #334155;
-  }
-
-  .avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: #007A3D;
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
-
-  /* Main Content */
   .main-content {
+    margin-left: 260px;
     max-width: 1400px;
-    margin: 0 auto;
     padding: 2rem;
-    width: 100%;
-    flex: 1;
+    width: calc(100% - 260px);
   }
 
   .back-button {
@@ -438,10 +382,9 @@
     font-weight: 600;
     color: #64748b;
     transition: all 0.2s;
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
     width: fit-content;
   }
-
   .back-button:hover {
     background: #f8fafc;
     color: #334155;
@@ -453,12 +396,14 @@
     padding: 4rem;
     color: #64748b;
   }
+  .error-state {
+    color: #dc2626;
+  }
 
-  /* Claim Details Container */
   .claim-details-container {
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1.5rem;
   }
 
   .claim-header {
@@ -469,129 +414,113 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 1rem;
   }
-
   .header-left h1 {
-    font-size: 1.875rem;
+    font-size: 1.75rem;
     font-weight: 700;
     color: #0f172a;
-    margin-bottom: 0.5rem;
+    margin: 0.5rem 0 0.25rem;
   }
-
   .parcel-id {
-    font-size: 1rem;
+    font-size: 0.95rem;
     color: #64748b;
     font-weight: 500;
   }
-
   .status-badge {
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
+    display: inline-block;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
     color: white;
-    font-weight: 600;
-    font-size: 0.875rem;
+    font-weight: 700;
+    font-size: 0.8rem;
+    text-transform: capitalize;
   }
 
-  /* Info Grid */
   .claim-info-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 1.5rem;
-  }
-
-  .info-card {
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    border: 1px solid #e2e8f0;
-  }
-
-  .info-card-header {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid #e2e8f0;
-  }
-
-  .info-card-header h3 {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: #0f172a;
-  }
-
-  .info-card-content {
-    display: flex;
-    flex-direction: column;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
   }
 
-  .info-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .info-row .label {
-    color: #64748b;
-    font-weight: 500;
-    font-size: 0.875rem;
-  }
-
-  .info-row .value {
-    color: #0f172a;
-    font-weight: 600;
-    font-size: 0.875rem;
-  }
-
-  /* Map Section */
-  .map-section {
+  .panel {
     background: white;
     border-radius: 12px;
     padding: 1.5rem;
     border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+  }
+  .wide {
+    grid-column: 1 / -1;
   }
 
   .section-header {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
     border-bottom: 1px solid #e2e8f0;
   }
-
   .section-header h3 {
-    font-size: 1.125rem;
+    font-size: 1.05rem;
     font-weight: 700;
     color: #0f172a;
   }
 
-  .boundary-points {
-    max-height: 300px;
-    overflow-y: auto;
+  #claim-map {
+    height: 420px;
+    border-radius: 10px;
+    overflow: hidden;
+    z-index: 0;
+  }
+
+  dl {
+    display: grid;
+    grid-template-columns: minmax(140px, 0.5fr) 1fr;
+    gap: 0.7rem 1rem;
+    margin-top: 0.5rem;
+  }
+  dt {
+    color: #64748b;
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-weight: 500;
+  }
+  .two-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .two-column div {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 0.5rem;
+  }
+  .span {
+    grid-column: 1 / -1;
   }
 
   .points-list {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 0.75rem;
+    margin-top: 1rem;
   }
-
   .point-item {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 0.75rem;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
     background: #f8fafc;
     border-radius: 8px;
   }
-
   .point-number {
-    width: 28px;
-    height: 28px;
-    background: #007A3D;
+    width: 26px;
+    height: 26px;
+    background: #007a3d;
     color: white;
     border-radius: 50%;
     display: flex;
@@ -599,35 +528,46 @@
     justify-content: center;
     font-weight: 600;
     font-size: 0.75rem;
+    flex-shrink: 0;
   }
-
   .point-coords {
     color: #0f172a;
     font-weight: 500;
-    font-size: 0.875rem;
+    font-size: 0.85rem;
   }
 
-  /* Approval Section */
-  .approval-section {
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    border: 1px solid #e2e8f0;
-  }
-
-  .approval-info {
-    display: flex;
-    flex-direction: column;
+  .media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 1rem;
+    margin-top: 0.5rem;
+  }
+  figure {
+    margin: 0;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #fff;
+  }
+  img,
+  video {
+    width: 100%;
+    height: 220px;
+    object-fit: cover;
+    background: #0f172a;
+    display: block;
+  }
+  figcaption {
+    padding: 0.65rem;
+    font-size: 0.8rem;
+    color: #475569;
+    overflow-wrap: anywhere;
   }
 
-  /* Actions Section */
   .actions-section {
     display: flex;
     gap: 1rem;
-    justify-content: flex-end;
   }
-
   .btn {
     display: flex;
     align-items: center;
@@ -640,60 +580,50 @@
     cursor: pointer;
     transition: all 0.2s;
   }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   .btn-approve {
     background: #16a34a;
     color: white;
   }
-
-  .btn-approve:hover:not(:disabled) {
+  .btn-approve:hover {
     background: #15803d;
-    transform: translateY(-1px);
   }
-
   .btn-reject {
     background: #dc2626;
     color: white;
   }
-
-  .btn-reject:hover:not(:disabled) {
+  .btn-reject:hover {
     background: #b91c1c;
-    transform: translateY(-1px);
   }
 
-  /* Responsive */
+  .empty {
+    color: #64748b;
+  }
+
   @media (max-width: 768px) {
-    .navbar-content {
-      padding: 0 1rem;
-    }
-
-    .navbar-menu {
-      display: none;
-    }
-
     .main-content {
+      margin-left: 0;
+      width: 100%;
       padding: 1rem;
     }
-
     .claim-header {
       flex-direction: column;
       align-items: flex-start;
-      gap: 1rem;
     }
-
-    .claim-info-grid {
+    .claim-info-grid,
+    .two-column {
       grid-template-columns: 1fr;
     }
-
+    .wide,
+    .span {
+      grid-column: auto;
+    }
+    #claim-map {
+      height: 300px;
+    }
     .actions-section {
+      width: 100%;
       flex-direction: column;
     }
-
     .btn {
       width: 100%;
       justify-content: center;

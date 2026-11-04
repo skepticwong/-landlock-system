@@ -36,11 +36,6 @@
           localStorage.setItem("user", JSON.stringify(data.user || { phone }));
         }
 
-        if (data.password_change_required) {
-          goto("/change-password");
-          return;
-        }
-
         // Redirect based on role
         const userRole = data.user?.role || "citizen";
         if (data.user && data.user.is_superuser) {
@@ -136,6 +131,11 @@
       </form>
 
       <div class="footer-links">
+        <span>
+          <a href="/reset-password" on:click|preventDefault={() => goto("/reset-password")}
+            >Development password reset</a
+          >
+        </span>
         <span>
           Don't have an account?
           <a href="/register" on:click|preventDefault={() => goto("/register")}

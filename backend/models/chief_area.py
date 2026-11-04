@@ -77,18 +77,20 @@ class ChiefArea:
         if not self.area_type or not self.area_id:
             return False
         
-        plot_district = plot_data.get('district', '').lower()
-        plot_ta = plot_data.get('traditional_authority', '').lower()
-        plot_village = plot_data.get('village', '').lower()
+        plot_district = str(plot_data.get('district', '') or '').strip().lower()
+        plot_ta = str(plot_data.get('traditional_authority', '') or '').strip().lower()
+        plot_village = str(plot_data.get('village', '') or '').strip().lower()
+        area_id = str(self.area_id or '').strip().lower()
+        area_name = str(self.area_name or '').strip().lower()
         
         if self.area_type == 'district':
             # Match by district name (case-insensitive)
-            return plot_district == self.area_id.lower() or plot_district in self.area_name.lower()
+            return plot_district == area_id or plot_district == area_name
         elif self.area_type == 'traditional_authority':
             # Match by traditional authority name (case-insensitive)
-            return plot_ta == self.area_id.lower() or plot_ta in self.area_name.lower()
+            return plot_ta == area_id or plot_ta == area_name
         elif self.area_type == 'village':
             # Match by village name (case-insensitive)
-            return plot_village == self.area_id.lower() or plot_village in self.area_name.lower()
+            return plot_village == area_id or plot_village == area_name
         
         return False

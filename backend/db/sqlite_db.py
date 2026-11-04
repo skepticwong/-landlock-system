@@ -159,6 +159,17 @@ def init_db(retry_count=0):
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         ''')
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS plot_media (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plot_id INTEGER NOT NULL,
+            media_type TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            created_at TEXT,
+            FOREIGN KEY (plot_id) REFERENCES plots(id)
+        )
+        ''')
 
         # Add updated_at column to plots if it doesn't exist
         cursor.execute("PRAGMA table_info(plots)")

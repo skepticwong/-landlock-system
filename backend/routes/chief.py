@@ -138,6 +138,44 @@ def get_chief_pending_claims(current_user):
     
     return jsonify(pending_claims)
 
+@chief_bp.route("/api/chief/claims/<int:claim_id>", methods=["GET"])
+@token_required
+def get_chief_claim_details(current_user, claim_id):
+    if current_user.role != 'chief' and not current_user.is_superuser:
+        return jsonify({"error": "Unauthorized - chiefs only"}), 403
+
+    plots = db.select("plots", eq={"id": claim_id})
+    if not plots:
+        return jsonify({"error": "Claim not found"}), 404
+
+    plot = plots[0]
+    chief_areas = db.select("chief_areas", eq={"chief_id": current_user.id})
+    if not current_user.is_superuser:
+        in_jurisdiction = False
+        for area in chief_areas:
+            if ChiefArea(**area).contains_plot(plot):
+                in_jurisdiction = True
+                break
+        if not in_jurisdiction:
+            return jsonify({"error": "Claim is outside your jurisdiction"}), 403
+
+    import json
+    if isinstance(plot.get('points'), str):
+        try:
+            plot['points'] = json.loads(plot['points'])
+        except json.JSONDecodeError:
+            plot['points'] = []
+    if isinstance(plot.get('witnesses'), str):
+        try:
+            plot['witnesses'] = json.loads(plot['witnesses'])
+        except json.JSONDecodeError:
+            plot['witnesses'] = []
+
+    owners = db.select("users", eq={"id": plot.get('user_id')}) if plot.get('user_id') else []
+    plot['owner'] = owners[0] if owners else {}
+    plot['media'] = db.select("plot_media", eq={"plot_id": claim_id}, order="created_at DESC")
+    return jsonify(plot)
+
 @chief_bp.route("/api/chief/verified-claims", methods=["GET"])
 @token_required
 def get_chief_verified_claims(current_user):
@@ -167,6 +205,26 @@ def get_chief_verified_claims(current_user):
                 break
     
     return jsonify(verified_claims)
+
+@chief_bp.route("/api/chief/disputed-claims", methods=["GET"])
+@token_required
+def get_chief_disputed_claims(current_user):
+    if current_user.role != 'chief' and not current_user.is_superuser:
+        return jsonify({"error": "Unauthorized - chiefs only"}), 403
+
+    chief_areas = db.select("chief_areas", eq={"chief_id": current_user.id})
+    if not chief_areas:
+        return jsonify([])
+
+    disputed_claims = []
+    for plot in db.select("plots", order="updated_at DESC"):
+        if plot.get('status') != 'disputed':
+            continue
+        for area in chief_areas:
+            if ChiefArea(**area).contains_plot(plot):
+                disputed_claims.append(plot)
+                break
+    return jsonify(disputed_claims)
 
 @chief_bp.route("/api/chief/pending-transactions", methods=["GET"])
 @token_required
