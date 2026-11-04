@@ -114,16 +114,13 @@
 
 <div class="dashboard">
   <!-- Top Navigation -->
-  <Navbar userType="citizen" activeLink="/dashboard" userName={userData.name} />
+  <Navbar userType="citizen" activeLink="/dashboard" userName={userData.name} userRole="Landowner" />
 
   <!-- Main Content -->
   <main class="main-content">
     <!-- Page Header -->
     <div class="page-header">
-      <div class="header-left">
-        <h1>Welcome back, {userData.name}! <Hand class="w-5 h-5 inline" /></h1>
-        <p class="subtitle">{userData.role} • Last seen: {userData.lastSeen}</p>
-      </div>
+     
       <div class="header-right">
         {#if userData.isOnline}
           <div class="status-badge success">

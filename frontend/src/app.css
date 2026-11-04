@@ -86,6 +86,14 @@ body {
   @apply bg-green-50 border-l-4 border-green-400 p-4;
 }
 
+/* ═══ App shell layout: pages sit next to the fixed sidebar ═══ */
+.sidebar ~ .topbar { margin-left: 72px; }
+.topbar ~ * { margin-left: 72px; }
+
+@media (max-width: 768px) {
+  .topbar ~ * { margin-left: 0; }
+}
+
 /* Status badges */
 .status-pending {
   @apply bg-yellow-100 text-yellow-800 text-xs font-medium px-2.5 py-0.5 rounded;

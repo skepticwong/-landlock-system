@@ -326,3 +326,85 @@ Received: {'phone': '+265882396867', 'password': '123456'}
 Result: user=0882396867, hash_present=True, is_valid=False
 Received: {'phone': '0999000001', 'password': 'admin123'}
 Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0888000009', 'password': '123456'}
+Result: user=0888000009, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'admin123'}
+Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0888000008', 'password': '123456'}
+Result: user=0888000008, hash_present=True, is_valid=True
+Received: {'phone': '0999000002', 'password': 'admin123'}
+Result: user=0999000002, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'admin123'}
+Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0888000009', 'password': '1234'}
+Result: user=0888000009, hash_present=True, is_valid=False
+Received: {'phone': '0985632285', 'password': '1234'}
+Result: Phone not found at all
+Received: {'phone': '0888000009', 'password': '0888000009'}
+Result: user=0888000009, hash_present=True, is_valid=False
+Received: {'phone': '0888000009', 'password': '0888000009'}
+Result: user=0888000009, hash_present=True, is_valid=False
+Received: {'phone': '0888000009', 'password': '1234'}
+Result: user=0888000009, hash_present=True, is_valid=False
+Received: {'phone': '0888000009', 'password': '12345'}
+Result: user=0888000009, hash_present=True, is_valid=False
+Received: {'phone': '0888000009', 'password': '2003'}
+Result: user=0888000009, hash_present=True, is_valid=False
+Received: {'phone': '0888000009', 'password': '1212'}
+Result: user=0888000009, hash_present=True, is_valid=False
+Received: {'phone': '0888000009', 'password': '1111'}
+Result: user=0888000009, hash_present=True, is_valid=False
+Received: {'phone': '0888000009', 'password': '1234'}
+Result: user=0888000009, hash_present=True, is_valid=False
+Received: {'phone': '0888000009', 'password': '123456'}
+Result: user=0888000009, hash_present=True, is_valid=True
+Received: {'phone': '0888000009', 'password': '12345'}
+Result: user=0888000009, hash_present=True, is_valid=False
+Received: {'phone': '0888000009', 'password': '123456'}
+Result: user=0888000009, hash_present=True, is_valid=True
+Received: {'phone': '0888000009', 'password': '123456'}
+Result: user=0888000009, hash_present=True, is_valid=True
+Received: {'phone': '0888000009', 'password': '123456'}
+Result: user=0888000009, hash_present=True, is_valid=True
+Received: {'phone': '0999000002', 'password': '123456'}
+Result: user=0999000002, hash_present=True, is_valid=False
+Received: {'phone': '0999000002', 'password': '12345'}
+Result: user=0999000002, hash_present=True, is_valid=False
+Received: {'phone': '0999000002', 'password': '123456'}
+Result: user=0999000002, hash_present=True, is_valid=False
+Received: {'phone': '0999000002', 'password': '12345'}
+Result: user=0999000002, hash_present=True, is_valid=False
+Received: {'phone': '0999000002', 'password': '1234'}
+Result: user=0999000002, hash_present=True, is_valid=False
+Received: {'phone': '0999000002', 'password': '1234'}
+Result: user=0999000002, hash_present=True, is_valid=False
+Received: {'phone': '0999000002', 'password': '$2b$12$9p/2J8oLU6BX3WNvHZBAnenCbxs2SWR7V0IWxaijSvFt9T8uUD8WC'}
+Result: user=0999000002, hash_present=True, is_valid=False
+Received: {'phone': '0882396866', 'password': '123456'}
+Result: user=0882396866, hash_present=True, is_valid=False
+Received: {'phone': '0882396866', 'password': '12345'}
+Result: user=0882396866, hash_present=True, is_valid=False
+Received: {'phone': '0882396866', 'password': '123456'}
+Result: user=0882396866, hash_present=True, is_valid=False
+Received: {'phone': '0888000009', 'password': '123456'}
+Result: user=0888000009, hash_present=True, is_valid=True
+Received: {'phone': '0882396866', 'password': '123456'}
+Result: user=0882396866, hash_present=True, is_valid=False
+Received: {'phone': '0888000001', 'password': '123456'}
+Result: user=0888000001, hash_present=True, is_valid=False
+Received: {'phone': '0888000001', 'password': '123456'}
+Result: user=0888000001, hash_present=True, is_valid=False
+Received: {'phone': '0999000001', 'password': '123456'}
+Result: user=0999000001, hash_present=True, is_valid=False
+Received: {'phone': '0999000001', 'password': '12345'}
+Result: user=0999000001, hash_present=True, is_valid=False
+Received: {'phone': '0999000001', 'password': '123456'}
+Result: user=0999000001, hash_present=True, is_valid=False
+Received: {'phone': '0999000001', 'password': '1234567'}
+Result: user=0999000001, hash_present=True, is_valid=False
+Received: {'phone': '0999000003', 'password': '1234567'}
+Result: user=0999000003, hash_present=True, is_valid=False
+Received: {'phone': '0999000003', 'password': '1234567'}
+Result: user=0999000003, hash_present=True, is_valid=False
+Received: {'phone': '0999000003', 'password': '123456'}
+Result: user=0999000003, hash_present=True, is_valid=False

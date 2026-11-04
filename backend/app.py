@@ -75,9 +75,11 @@ def health():
 def register():
     data = request.json
     # LandLock specific required fields
-    required_fields = ['national_id', 'full_name', 'email', 'pin', 'phone']
+    required_fields = ['national_id', 'full_name', 'email', 'password', 'phone']
     if not all(k in data for k in required_fields):
         return jsonify({"error": "Missing required fields"}), 400
+    if len(data['password']) < 8:
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
 
     phone = normalize_phone(data['phone'])
 
@@ -94,12 +96,14 @@ def register():
         "username": data['national_id'], # Store National ID in username column
         "email": data['email'],
         "phone": phone,
-        "password_hash": get_password_hash(data['pin']), # Store PIN in password_hash column
+        "password_hash": get_password_hash(data['password']),
         "full_name": data['full_name'],
         "is_active": True,
         "is_superuser": False,
         "created_at": datetime.now().isoformat(),
-        "updated_at": datetime.now().isoformat()
+        "updated_at": datetime.now().isoformat(),
+        "password_attempts": 0,
+        "must_change_password": False
     }
 
     user = db.insert("users", user_data)
@@ -180,7 +184,7 @@ def login():
     # Allow login with phone and pin
     if not all(k in data for k in ['phone', 'password']):
         print("[DEBUG LOGIN] Missing phone or password")
-        return jsonify({"error": "Phone and PIN are required"}), 400
+        return jsonify({"error": "Phone and password are required"}), 400
 
     phone = normalize_phone(data['phone'])
     print(f"[DEBUG LOGIN] Looking for phone: {phone}")
@@ -194,7 +198,7 @@ def login():
                 f.write(f"Result: Phone not found at all\n")
         except Exception:
             pass
-        return jsonify({"error": "Invalid phone number or PIN"}), 401
+        return jsonify({"error": "Invalid phone number or password"}), 401
 
     user = response[0]
     print(f"[DEBUG LOGIN] Found user: {user['username']}, id: {user['id']}")
@@ -212,7 +216,27 @@ def login():
         pass
         
     if not is_valid:
-        return jsonify({"error": "Invalid phone number or PIN"}), 401
+        attempts = int(user.get('password_attempts') or 0) + 1
+        must_change = attempts >= 3
+        db.update("users", {
+            "password_attempts": 0 if must_change else attempts,
+            "must_change_password": must_change,
+            "updated_at": datetime.now().isoformat()
+        }, eq={"id": user['id']})
+        if must_change:
+            return jsonify({
+                "error": "Too many failed attempts. Sign in with your current password to create a new one.",
+                "password_change_required": True
+            }), 423
+        return jsonify({
+            "error": "Invalid phone number or password",
+            "attempts_remaining": 3 - attempts
+        }), 401
+
+    db.update("users", {
+        "password_attempts": 0,
+        "updated_at": datetime.now().isoformat()
+    }, eq={"id": user['id']})
 
     access_token = create_access_token(
         data={"sub": str(user['id'])},
@@ -222,6 +246,7 @@ def login():
     return jsonify({
         "access_token": access_token,
         "token_type": "bearer",
+        "password_change_required": bool(user.get('must_change_password')),
         "user": {
             "id": user['id'],
             "username": user['username'],
@@ -232,6 +257,23 @@ def login():
             "is_superuser": bool(user.get('is_superuser', False))
         }
     })
+
+@app.route("/api/auth/change-password", methods=["POST"])
+@token_required
+def change_password(current_user):
+    password = (request.json or {}).get("password", "")
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
+
+    password_hash = get_password_hash(password)
+    db.update("users", {
+        "password_hash": password_hash,
+        "hashed_password": password_hash,
+        "password_attempts": 0,
+        "must_change_password": False,
+        "updated_at": datetime.now().isoformat()
+    }, eq={"id": current_user.id})
+    return jsonify({"message": "Password changed successfully"})
 
 # Plot routes
 @app.route("/api/plots", methods=["POST"])

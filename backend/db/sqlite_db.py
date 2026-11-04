@@ -40,6 +40,13 @@ def init_db(retry_count=0):
             updated_at TEXT
         )
         ''')
+
+        cursor.execute("PRAGMA table_info(users)")
+        user_columns = [column[1] for column in cursor.fetchall()]
+        if 'password_attempts' not in user_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN password_attempts INTEGER DEFAULT 0")
+        if 'must_change_password' not in user_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0")
         
         # Create Plots Table
         # For JSON arrays like points, we can store as TEXT and serialize/deserialize
