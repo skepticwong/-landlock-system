@@ -1,173 +1,295 @@
 <script>
-  import { goto } from '$app/navigation';
-  import { browser } from '$app/environment';
-  
-  let phone = '';
-  let password = '';
-  let error = '';
+  import { goto } from "$app/navigation";
+  import { browser } from "$app/environment";
+  import { Eye, EyeOff } from "lucide-svelte";
+
+  let phone = "";
+  let password = "";
+  let showPassword = false;
+  let error = "";
   let isLoading = false;
 
   async function handleLogin() {
-    error = '';
-    
+    error = "";
+
     if (!phone || !password) {
-      error = 'Please enter both phone number and password';
+      error = "Please enter both phone number and password";
       return;
     }
 
     isLoading = true;
 
     try {
-      // TODO: Replace with your actual API endpoint
-      const response = await fetch('http://localhost:5000/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, password })
+      // Corrected API endpoint with /api/ prefix
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, password }),
       });
 
       const data = await response.json();
 
-      if (response.ok && data.token) {
+      if (response.ok && data.access_token) {
         // Save token to localStorage
         if (browser) {
-          localStorage.setItem('token', data.token);
-          localStorage.setItem('user', JSON.stringify(data.user || { phone }));
+          localStorage.setItem("token", data.access_token);
+          localStorage.setItem("user", JSON.stringify(data.user || { phone }));
         }
-        
-        // Redirect to dashboard
-        goto('/dashboard');
+
+        // Redirect based on role
+        const userRole = data.user?.role || "citizen";
+        if (data.user && data.user.is_superuser) {
+          goto("/dashboard/official");
+        } else if (userRole === "chief") {
+          goto("/dashboard/chief");
+        } else if (userRole === "official") {
+          goto("/dashboard/official");
+        } else {
+          goto("/dashboard");
+        }
       } else {
-        error = data.error || 'Login failed. Please check your credentials.';
+        error = data.error || "Login failed. Please check your credentials.";
       }
     } catch (err) {
-      error = 'Network error. Please try again.';
-      console.error('Login error:', err);
+      error = "Network error. Please try again.";
+      console.error("Login error:", err);
     } finally {
       isLoading = false;
     }
   }
-
-  // For demo purposes - remove in production
-  function demoLogin() {
-    if (browser) {
-      localStorage.setItem('token', 'demo-token-12345');
-      localStorage.setItem('user', JSON.stringify({ phone: '265888123456', name: 'Demo User' }));
-    }
-    goto('/dashboard');
-  }
 </script>
 
+<svelte:head>
+  <title>Login - LandLock</title>
+</svelte:head>
+
 <div class="login-container">
-  <div class="login-card">
-    <div class="logo-section">
-      <div class="logo-circle">🌍</div>
+  <div class="form-panel">
+    <div class="form-inner">
+      <div class="form-header">
+        <img
+          src="/images/Coat_of_arms_of_Malawi.svg"
+          alt="LandLock"
+          class="form-logo"
+        />
+        <h2>Welcome back</h2>
+        <p>Sign in to your LandLock account</p>
+      </div>
+
+      <form on:submit|preventDefault={handleLogin}>
+        <div class="form-group">
+          <label for="phone">Phone Number</label>
+          <input
+            id="phone"
+            type="tel"
+            placeholder="0888123456"
+            bind:value={phone}
+            disabled={isLoading}
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <div class="password-container">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="Enter your password"
+              bind:value={password}
+              disabled={isLoading}
+            />
+            <button
+              type="button"
+              class="toggle-password"
+              on:click={() => (showPassword = !showPassword)}
+              disabled={isLoading}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {#if showPassword}
+                <EyeOff class="w-5 h-5" />
+              {:else}
+                <Eye class="w-5 h-5" />
+              {/if}
+            </button>
+          </div>
+        </div>
+
+        {#if error}
+          <div class="error-message">{error}</div>
+        {/if}
+
+        <button type="submit" class="btn-login" disabled={isLoading}>
+          {#if isLoading}
+            <span class="btn-content">
+              <span class="spinner"></span>
+              Logging in...
+            </span>
+          {:else}
+            Login
+          {/if}
+        </button>
+      </form>
+
+      <div class="footer-links">
+        <span>
+          <a href="/reset-password" on:click|preventDefault={() => goto("/reset-password")}
+            >Development password reset</a
+          >
+        </span>
+        <span>
+          Don't have an account?
+          <a href="/register" on:click|preventDefault={() => goto("/register")}
+            >Sign Up</a
+          >
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="brand-panel">
+    <div class="brand-inner">
+      <img
+        src="/images/Coat_of_arms_of_Malawi.svg"
+        alt="LandLock Logo"
+        class="brand-logo"
+      />
       <h1>LandLock</h1>
       <p>Secure Land Registry for Malawi</p>
-    </div>
-
-    <form on:submit|preventDefault={handleLogin}>
-      <div class="form-group">
-        <label for="phone">Phone Number</label>
-        <input
-          id="phone"
-          type="tel"
-          placeholder="265888123456"
-          bind:value={phone}
-          disabled={isLoading}
-        />
-      </div>
-
-      <div class="form-group">
-        <label for="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          placeholder="Enter your password"
-          bind:value={password}
-          disabled={isLoading}
-        />
-      </div>
-
-      {#if error}
-        <div class="error-message">
-          {error}
-        </div>
-      {/if}
-
-      <button type="submit" class="btn-login" disabled={isLoading}>
-        {#if isLoading}
-          Logging in...
-        {:else}
-          Login
-        {/if}
-      </button>
-
-      <!-- Demo button - remove in production -->
-      <button type="button" class="btn-demo" on:click={demoLogin}>
-        Demo Login (Skip Authentication)
-      </button>
-    </form>
-
-    <div class="footer-links">
-      <a href="/register" on:click|preventDefault={() => goto('/register')}>
-        Don't have an account? <span class="register-link">Register</span>
-      </a>
     </div>
   </div>
 </div>
 
 <style>
   .login-container {
-    min-height: 100vh;
+    width: min(960px, calc(100% - 2rem));
+    min-height: 620px;
+    position: fixed;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    background: #f8f9fa;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
+  }
+
+  .login-container,
+  .login-container * {
+    box-sizing: border-box;
+  }
+
+  :global(body) {
+    margin: 0;
+    background-color: #edf4f1;
+    background-image:
+      linear-gradient(rgba(0, 122, 61, 0.22) 1px, transparent 1px),
+      linear-gradient(to right, rgba(0, 122, 61, 0.22) 1px, #edf4f1 1px);
+    background-size: 20px 20px;
+  }
+
+  /* ═══════════ Right brand panel ═══════════ */
+  .brand-panel {
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(to bottom, #f0fdf4, #e6f7ee);
-    padding: 1rem;
+    background: #007a3d;
+    padding: 2rem;
+    position: relative;
+    overflow: hidden;
   }
 
-  .login-card {
-    background: white;
-    border-radius: 16px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  /* subtle decorative shapes */
+  .brand-panel::before {
+    content: "";
+    position: absolute;
+    top: -120px;
+    right: -120px;
+    width: 320px;
+    height: 320px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .brand-panel::after {
+    content: "";
+    position: absolute;
+    bottom: -160px;
+    left: -80px;
+    width: 380px;
+    height: 380px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .brand-inner {
+    text-align: center;
+    position: relative;
+    z-index: 1;
+  }
+
+  .brand-logo {
+    width: 7rem;
+    height: 7rem;
+    object-fit: contain;
+    margin-bottom: 1.5rem;
+  }
+
+  .brand-inner h1 {
+    font-size: 2.25rem;
+    font-weight: 700;
+    color: white;
+    letter-spacing: -0.5px;
+    margin: 0 0 0.5rem;
+  }
+
+  .brand-inner p {
+    font-size: 1.05rem;
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 500;
+    margin: 0;
+  }
+
+  /* ═══════════ Right form panel ═══════════ */
+  .form-panel {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 2rem;
+  }
+
+  .form-inner {
     width: 100%;
     max-width: 420px;
   }
 
-  .logo-section {
+  .form-header {
     text-align: center;
     margin-bottom: 2rem;
   }
 
-  .logo-circle {
-    width: 4rem;
-    height: 4rem;
-    border-radius: 1rem;
-    background: linear-gradient(135deg, #0d9488, #0b7a71);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2rem;
-    box-shadow: 0 4px 12px rgba(13,148,136,0.25);
+  .form-logo {
+    width: 3.5rem;
+    height: 3.5rem;
+    object-fit: contain;
     margin-bottom: 1rem;
   }
 
-  h1 {
-    font-size: 2rem;
+  .form-header h2 {
+    font-size: 1.75rem;
     font-weight: 700;
-    background: linear-gradient(90deg, #0d9488, #0b7a71);
-    background-clip: text;
-    -webkit-background-clip: text;
-    color: transparent;
-    margin: 0.5rem 0;
+    color: #0f172a;
+    margin: 0 0 0.375rem;
   }
 
-  .logo-section p {
+  .form-header p {
+    font-size: 0.95rem;
     color: #64748b;
-    font-weight: 600;
+    margin: 0;
   }
 
+  /* ═══════════ Form ═══════════ */
   .form-group {
     margin-bottom: 1.25rem;
   }
@@ -177,23 +299,24 @@
     font-weight: 600;
     font-size: 0.875rem;
     margin-bottom: 0.5rem;
-    color: #334155;
+    color: #212529;
   }
 
   input {
     width: 100%;
-    padding: 0.875rem 1rem;
-    border: 2px solid #e2e8f0;
-    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    border: 2px solid #dee2e6;
+    border-radius: 8px;
     font-size: 1rem;
-    background: #f8fafc;
-    transition: border-color 0.2s;
+    background: white;
+    color: #212529;
+    transition: all 0.2s;
   }
 
   input:focus {
     outline: none;
-    border-color: #0d9488;
-    box-shadow: 0 0 0 3px rgba(13,148,136,0.15);
+    border-color: #007a3d;
+    box-shadow: 0 0 0 3px rgba(0, 122, 61, 0.15);
   }
 
   input:disabled {
@@ -201,34 +324,68 @@
     cursor: not-allowed;
   }
 
+  .password-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+
+  .password-container input {
+    padding-right: 3rem;
+  }
+
+  .toggle-password {
+    position: absolute;
+    right: 0.75rem;
+    background: none;
+    border: none;
+    color: #6c757d;
+    cursor: pointer;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+  }
+
+  .toggle-password:hover:not(:disabled) {
+    color: #007a3d;
+  }
+
+  .toggle-password:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .error-message {
-    background: #fee2e2;
-    color: #991b1b;
+    background: #fff5f5;
+    color: #ce1126;
     padding: 0.75rem;
-    border-radius: 8px;
+    border-radius: 6px;
     font-size: 0.875rem;
     margin-bottom: 1rem;
-    border: 1px solid #fecaca;
+    border: 1px solid #fed7d7;
   }
 
   .btn-login {
     width: 100%;
-    padding: 1rem;
-    background: linear-gradient(135deg, #0d9488, #0b7a71);
+    padding: 0.875rem;
+    background: #007a3d;
     color: white;
     border: none;
-    border-radius: 12px;
+    border-radius: 8px;
     font-weight: 600;
     font-size: 1rem;
     cursor: pointer;
-    box-shadow: 0 4px 10px rgba(13,148,136,0.3);
+    box-shadow: 0 4px 10px rgba(0, 122, 61, 0.2);
     transition: all 0.2s;
   }
 
   .btn-login:hover:not(:disabled) {
-    background: linear-gradient(135deg, #0b7a71, #09615b);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 14px rgba(13,148,136,0.4);
+    background: #005c2e;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 12px rgba(0, 122, 61, 0.25);
   }
 
   .btn-login:disabled {
@@ -237,48 +394,59 @@
     transform: none;
   }
 
-  .btn-demo {
-    width: 100%;
-    padding: 0.75rem;
-    background: #f1f5f9;
-    color: #475569;
-    border: 2px solid #e2e8f0;
-    border-radius: 12px;
-    font-weight: 600;
-    font-size: 0.9rem;
-    cursor: pointer;
-    margin-top: 0.75rem;
-    transition: all 0.2s;
+  .btn-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
   }
 
-  .btn-demo:hover {
-    background: #e2e8f0;
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
   }
 
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* ═══════════ Footer ═══════════ */
   .footer-links {
     text-align: center;
     margin-top: 1.5rem;
+    color: #495057;
+    font-weight: 500;
+    font-size: 0.9rem;
   }
 
   .footer-links a {
-    color: #4b5563;
+    color: #007a3d;
+    font-weight: 600;
+    margin-left: 0.25rem;
     text-decoration: none;
-    font-weight: 500;
-    font-size: 0.9rem;
     transition: color 0.2s ease;
   }
 
   .footer-links a:hover {
-    color: #10b981;
+    text-decoration: underline;
   }
 
-  .register-link {
-    color: #10b981;
-    font-weight: 600;
-    margin-left: 0.25rem;
-  }
-  
-  .footer-links a:hover .register-link {
-    text-decoration: underline;
+  /* ═══════════ Responsive ═══════════ */
+  @media (max-width: 900px) {
+    .brand-panel {
+      display: none;
+    }
+    .form-panel {
+      background: #f8f9fa;
+    }
   }
 </style>

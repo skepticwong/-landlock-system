@@ -1,4 +1,5 @@
 // src/lib/map.js
+import 'leaflet/dist/leaflet.css';
 let L; // Store Leaflet reference
 
 export async function initMap(mapElement, onMapClick) {

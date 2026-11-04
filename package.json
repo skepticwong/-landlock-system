@@ -1,5 +1,7 @@
 {
   "dependencies": {
+    "jose": "^6.2.14",
+    "requests": "^0.3.0",
     "svelte-charts": "^0.0.1"
   }
 }

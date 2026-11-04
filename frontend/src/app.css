@@ -1,3 +1,27 @@
+:root {
+  /* Malawi Government Palette - Professional & Accessibility-First */
+  --bg-primary: #F8F9FA;          /* Light gray to reduce eye strain */
+  --text-primary: #212529;        /* Dark gray for readability */
+  --color-primary: #007A3D;       /* Government Green */
+  --color-primary-hover: #005C2E; /* Darker Government Green */
+  --color-warning: #FFC107;       /* Amber for pending applications */
+  --color-warning-hover: #D9A300;
+  --color-danger: #CE1126;        /* Red for rejected/boundary conflicts */
+  --color-danger-hover: #A70E1E;
+  --color-info: #0D6EFD;          /* Blue for informational messages */
+  --color-info-hover: #0B5ED7;
+  --color-disabled: #6C757D;      /* Medium gray for inactive items */
+  --color-card-bg: #FFFFFF;
+  --color-border: #DEE2E6;
+  
+  /* Land-Specific Color Applications (Contextual) */
+  --color-land-customary: #8B6F47; /* Earth Brown - Traditional land tenure */
+  --color-land-public: #003366;    /* Navy Blue - Signals government ownership */
+  --color-land-private: #228B22;   /* Forest Green - Private/Leasehold */
+  --color-land-disputed: #CE1126;  /* Red for boundaries in conflict */
+  --color-land-verified: #007A3D;  /* Green for surveyed/verified */
+}
+
 /* Map styles */
 .map-container {
   height: 400px;
@@ -18,21 +42,22 @@
 
 /* Custom styles */
 body {
-  @apply bg-gray-50;
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
 }
 
 /* Button styles */
 .btn {
-  @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500;
+  @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-[#007A3D] hover:bg-[#005C2E] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#007A3D];
 }
 
 .btn-outline {
-  @apply border-gray-300 text-teal-700 bg-white hover:bg-gray-50 focus:ring-teal-500;
+  @apply border-gray-300 text-[#007A3D] bg-white hover:bg-gray-50 focus:ring-[#007A3D];
 }
 
 /* Form styles */
 .input {
-  @apply appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm;
+  @apply appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-[#007A3D] focus:border-[#007A3D] sm:text-sm;
 }
 
 /* Card styles */
@@ -59,6 +84,14 @@ body {
 
 .alert-success {
   @apply bg-green-50 border-l-4 border-green-400 p-4;
+}
+
+/* ═══ App shell layout: pages sit next to the fixed sidebar ═══ */
+.sidebar ~ .topbar { margin-left: 72px; }
+.topbar ~ * { margin-left: 72px; }
+
+@media (max-width: 768px) {
+  .topbar ~ * { margin-left: 0; }
 }
 
 /* Status badges */
