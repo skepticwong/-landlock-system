@@ -17,6 +17,11 @@ export async function initMap(mapElement, onMapClick) {
 		map.on('click', onMapClick);
 	}
 
+	// Fix tiles rendering at the wrong size when the container was
+	// hidden/shown or resized before the map was created
+	setTimeout(() => map.invalidateSize(), 150);
+	window.addEventListener('resize', () => map.invalidateSize());
+
 	return map;
 }
 

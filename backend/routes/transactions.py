@@ -153,6 +153,12 @@ def initiate_sale(current_user):
     if plot.get("status") not in ("approved", "verified"):
         return jsonify({"error": "Plot must be approved or verified before selling"}), 400
 
+    # ── State-held plots can never be sold or transferred ──
+    from utils.plot_protection import is_plot_protected, locked_response
+    if is_plot_protected(plot):
+        err, code = locked_response()
+        return jsonify(err), code
+
     # ── Validate buyer ──
     buyer_phone = _normalize_phone(data["buyer_phone"])
     buyer_rows = db.select("users", eq={"phone": buyer_phone})
@@ -685,6 +691,19 @@ def _complete_transaction(transaction_id: int):
     now = datetime.now().isoformat()
 
     # Transfer plot ownership to buyer
+    # Guard: state-held plots must never be transferred (defence in depth)
+    from utils.plot_protection import is_plot_protected
+    plot_row = db.select("plots", eq={"id": tx["plot_id"]})
+    if plot_row and is_plot_protected(plot_row[0]):
+        log_transaction_event(
+            transaction_id=transaction_id,
+            event_type="transfer_blocked",
+            actor_id=None,
+            actor_role="system",
+            metadata={"reason": "state-held plot cannot be transferred", "plot_id": tx["plot_id"]},
+        )
+        return  # do NOT transfer ownership; transaction stays incomplete
+
     db.update("plots", {
         "user_id": tx["buyer_id"],
         "updated_at": now,

@@ -468,3 +468,183 @@ Received: {'phone': '0999000001', 'password': 'landlock123'}
 Result: user=0999000001, hash_present=True, is_valid=False
 Received: {'phone': '0999000001', 'password': 'landlock123'}
 Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0999000003', 'password': 'landlock123'}
+Result: user=0999000003, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0999000003', 'password': 'landlock123'}
+Result: user=0999000003, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0999000003', 'password': 'landlock123'}
+Result: user=0999000003, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0999000003', 'password': 'landlock123'}
+Result: user=0999000003, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'admin123'}
+Result: user=0999000001, hash_present=True, is_valid=False
+Received: {'password': 'user123', 'phone': '0882396866'}
+Result: user=0882396866, hash_present=True, is_valid=True
+Received: {'password': 'user123', 'phone': '0882396866'}
+Result: user=0882396866, hash_present=True, is_valid=True
+Received: {'password': 'user123', 'phone': '0882396866'}
+Result: user=0882396866, hash_present=True, is_valid=True
+Received: {'password': 'user123', 'phone': '0882396866'}
+Result: user=0882396866, hash_present=True, is_valid=True
+Received: {'phone': '0999000003', 'password': 'landlock123'}
+Result: user=0999000003, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0999000003', 'password': 'landlock123'}
+Result: user=0999000003, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0999000003', 'password': 'landlock123'}
+Result: user=0999000003, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000003', 'password': 'landlock123'}
+Result: user=0999000003, hash_present=True, is_valid=True
+Received: {'phone': '0999000003', 'password': 'landlock123'}
+Result: user=0999000003, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000003', 'password': 'landlock123'}
+Result: user=0999000003, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: Phone not found at all
+Received: {'phone': '0999000003', 'password': 'landlock123'}
+Result: user=0999000003, hash_present=True, is_valid=True
+Received: {'phone': '0999000003', 'password': 'landlock123'}
+Result: user=0999000003, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0888000009', 'password': 'landlock123'}
+Result: user=0888000009, hash_present=True, is_valid=False
+Received: {'phone': '0800000000', 'password': 'landlock123'}
+Result: user=0800000000, hash_present=True, is_valid=True
+Received: {'phone': '0800000000', 'password': 'landlock123'}
+Result: user=0800000000, hash_present=True, is_valid=True
+Received: {'phone': '0999000001', 'password': 'landlock123'}
+Result: user=0999000001, hash_present=True, is_valid=True
+Received: {'phone': '0888000008', 'password': 'landlock123'}
+Result: user=0888000008, hash_present=True, is_valid=False
+Received: {'phone': '0848123456', 'password': 'landlock123'}
+Result: user=0848123456, hash_present=True, is_valid=False
+Received: {'phone': '0848123456', 'password': 'landlock123'}
+Result: user=0848123456, hash_present=True, is_valid=False
+Received: {'phone': '0848123456', 'password': 'landlock123'}
+Result: user=0848123456, hash_present=True, is_valid=False
+Received: {'phone': '0848123456', 'password': 'landlock123'}
+Result: user=0848123456, hash_present=True, is_valid=True
+Received: {'phone': '0848123456', 'password': 'landlock123'}
+Result: user=0848123456, hash_present=True, is_valid=True
+Received: {'phone': '0800000000', 'password': 'landlock123'}
+Result: user=0800000000, hash_present=True, is_valid=True
+Received: {'phone': '0848123456', 'password': 'landlock123'}
+Result: user=0848123456, hash_present=True, is_valid=True
+Received: {'phone': '0800000000', 'password': 'landlock123'}
+Result: user=0800000000, hash_present=True, is_valid=True
+Received: {'phone': '0848123456', 'password': 'landlock123'}
+Result: user=0848123456, hash_present=True, is_valid=True
+Received: {'phone': '0848123456', 'password': 'landlock123'}
+Result: user=0848123456, hash_present=True, is_valid=True
+Received: {'phone': '0848123456', 'password': 'landlock123'}
+Result: user=0848123456, hash_present=True, is_valid=True
+Received: {'phone': '0848123456', 'password': 'landlock123'}
+Result: user=0848123456, hash_present=True, is_valid=True
+Received: {'phone': '0848123456', 'password': 'landlock123'}
+Result: user=0848123456, hash_present=True, is_valid=True
+Received: {'phone': '0848123456', 'password': 'landlock123'}
+Result: user=0848123456, hash_present=True, is_valid=True

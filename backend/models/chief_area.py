@@ -2,6 +2,7 @@
 from datetime import datetime
 from db.sqlite_db import db
 from data.geographic_areas import get_area_name
+import json
 
 class ChiefArea:
     def __init__(self, **kwargs):
@@ -12,6 +13,9 @@ class ChiefArea:
         self.area_name = kwargs.get('area_name')
         self.created_at = kwargs.get('created_at', datetime.utcnow().isoformat())
         self.updated_at = kwargs.get('updated_at', datetime.utcnow().isoformat())
+        self.district_id = kwargs.get('district_id')
+        self.boundary = kwargs.get('boundary')
+        self.villages = kwargs.get('villages')
 
     @classmethod
     def from_db(cls, data):
@@ -74,6 +78,24 @@ class ChiefArea:
 
     def contains_plot(self, plot_data: dict) -> bool:
         """Check if a plot is within the chief's predefined area based on district/TA/village"""
+        boundary = self.boundary
+        if isinstance(boundary, str):
+            try:
+                boundary = json.loads(boundary)
+            except json.JSONDecodeError:
+                boundary = None
+        if boundary:
+            plot_points = plot_data.get('points', [])
+            if isinstance(plot_points, str):
+                try:
+                    plot_points = json.loads(plot_points)
+                except json.JSONDecodeError:
+                    plot_points = []
+            for point in plot_points or []:
+                lng = point.get('lng', point.get('longitude')) if isinstance(point, dict) else None
+                lat = point.get('lat', point.get('latitude')) if isinstance(point, dict) else None
+                if lng is not None and lat is not None and self._point_in_polygon(lng, lat, boundary):
+                    return True
         if not self.area_type or not self.area_id:
             return False
         
@@ -93,4 +115,29 @@ class ChiefArea:
             # Match by village name (case-insensitive)
             return plot_village == area_id or plot_village == area_name
         
+        # Fallback: match plot against villages explicitly assigned to this chief area
+        villages = self.villages
+        if isinstance(villages, str):
+            try:
+                villages = json.loads(villages)
+            except (TypeError, json.JSONDecodeError):
+                villages = []
+        if villages and plot_village:
+            return plot_village in [str(v).strip().lower() for v in villages]
+        
         return False
+
+    @staticmethod
+    def _point_in_polygon(lng, lat, polygon):
+        inside = False
+        j = len(polygon) - 1
+        for i, point in enumerate(polygon):
+            xi, yi = point[0], point[1]
+            xj, yj = polygon[j][0], polygon[j][1]
+            intersects = ((yi > lat) != (yj > lat)) and (
+                lng < (xj - xi) * (lat - yi) / ((yj - yi) or 1e-12) + xi
+            )
+            if intersects:
+                inside = not inside
+            j = i
+        return inside

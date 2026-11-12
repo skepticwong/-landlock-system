@@ -94,6 +94,21 @@ def init_db(retry_count=0):
             cursor.execute("ALTER TABLE plots ADD COLUMN has_map_boundary BOOLEAN DEFAULT 0")
         if 'size_unit' not in columns:
             cursor.execute("ALTER TABLE plots ADD COLUMN size_unit TEXT DEFAULT 'meters'")
+        if 'area' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN area REAL")
+        if 'location' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN location TEXT")
+        if 'description' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN description TEXT")
+        if 'payment_id' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN payment_id INTEGER")
+        # Plot type: normal citizen plots vs state-held plots (government/military/city)
+        if 'plot_type' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN plot_type TEXT DEFAULT 'private'")
+        if 'is_protected' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN is_protected BOOLEAN DEFAULT 0")
+        if 'created_by_official' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN created_by_official INTEGER")
 
         # Create Transactions Table
         cursor.execute('''
@@ -227,6 +242,15 @@ def init_db(retry_count=0):
         )
         ''')
 
+        cursor.execute("PRAGMA table_info(chief_areas)")
+        chief_area_columns = {column[1] for column in cursor.fetchall()}
+        if 'district_id' not in chief_area_columns:
+            cursor.execute("ALTER TABLE chief_areas ADD COLUMN district_id TEXT")
+        if 'boundary' not in chief_area_columns:
+            cursor.execute("ALTER TABLE chief_areas ADD COLUMN boundary TEXT")
+        if 'villages_json' not in chief_area_columns:
+            cursor.execute("ALTER TABLE chief_areas ADD COLUMN villages_json TEXT DEFAULT '[]'")
+
         # Create Buyer Interests Table (for marketplace interest requests)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS buyer_interests (
@@ -292,6 +316,37 @@ def init_db(retry_count=0):
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         ''')
+
+        # Create Payments Table (mock payment records)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            plot_id INTEGER,
+            transaction_id INTEGER,
+            payment_type TEXT NOT NULL,
+            amount REAL NOT NULL,
+            currency TEXT DEFAULT 'MWK',
+            status TEXT DEFAULT 'pending',
+            payment_method TEXT,
+            payment_reference TEXT,
+            description TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            completed_at TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (plot_id) REFERENCES plots(id)
+        )
+        ''')
+
+        cursor.execute("PRAGMA table_info(payments)")
+        payment_columns = {column[1] for column in cursor.fetchall()}
+        if 'payment_method' not in payment_columns:
+            cursor.execute("ALTER TABLE payments ADD COLUMN payment_method TEXT")
+        if 'payment_reference' not in payment_columns:
+            cursor.execute("ALTER TABLE payments ADD COLUMN payment_reference TEXT")
+        if 'completed_at' not in payment_columns:
+            cursor.execute("ALTER TABLE payments ADD COLUMN completed_at TEXT")
 
         conn.commit()
         conn.close()

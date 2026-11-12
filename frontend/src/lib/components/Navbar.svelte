@@ -11,6 +11,7 @@
     Shield,
     AlertTriangle,
     Ban,
+    MessageSquare,
     ArrowRight,
     X,
     LayoutDashboard,
@@ -80,12 +81,23 @@
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
+  function handleUnauthorized(res: Response) {
+    if (res.status !== 401 || !browser) return;
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    if (pollTimer) clearInterval(pollTimer);
+    goto("/login");
+  }
+
   async function loadProfile() {
     try {
       const res = await fetch(`${API_BASE}/api/user/me`, {
         headers: authHeaders(),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        handleUnauthorized(res);
+        return;
+      }
       const u = await res.json();
       if (u.full_name || u.username) profileName = u.full_name || u.username;
       if (u.is_superuser) profileRole = "Administrator";
@@ -177,6 +189,8 @@
         const data = await res.json();
         notifications = data.notifications || [];
         unreadCount = data.unread_count || 0;
+      } else {
+        handleUnauthorized(res);
       }
     } catch {
       /* silent */
@@ -239,6 +253,8 @@
         return CheckCheck;
       case "rejected":
         return Ban;
+      case "interest":
+        return MessageSquare;
       default:
         return Bell;
     }
@@ -256,6 +272,8 @@
         return "#007A3D";
       case "rejected":
         return "#dc2626";
+      case "interest":
+        return "#007A3D";
       default:
         return "#6b7280";
     }

@@ -4,6 +4,7 @@
   import { browser } from '$app/environment';
   import { Shield, FileText, DollarSign, RefreshCw, MapPin, Paperclip, Check, User, ClipboardList } from 'lucide-svelte';
   import Navbar from '$lib/components/Navbar.svelte';
+  import { calculatePolygonArea, formatArea, detectDistrict, loadDistrictBoundaries } from '$lib/geo';
 
   // Step management
   let currentStep = 1;
@@ -14,6 +15,8 @@
   let mapInstance: any = null;
   let mapPoints: any[] = [];
   let polylineLayer: any = null;
+  let autoArea: number | null = null;
+  let autoDistrict: string | null = null;
 
   async function toggleMapSection() {
     showMapSection = !showMapSection;
@@ -23,6 +26,7 @@
         const mapEl = document.getElementById('boundary-map');
         if (mapEl) {
           try {
+            loadDistrictBoundaries(); // pre-fetch for instant district detection
             const mapModule = await import('$lib/map');
             mapInstance = await mapModule.initMap(mapEl, async (e: any) => {
               mapPoints = [...mapPoints, e.latlng];
@@ -32,12 +36,40 @@
               if (mapPoints.length > 1) {
                 polylineLayer = mapModule.addPolyline(mapInstance, mapPoints, '#22c55e');
               }
+              updateAutoInfo();
             });
+            setTimeout(() => mapInstance && mapInstance.invalidateSize(), 200);
           } catch (err) {
             console.error('Failed to init map', err);
           }
         }
       }
+    }
+  }
+
+  function updateAutoInfo() {
+    // Auto-calculate area in m² from the plotted boundary
+    if (mapPoints.length >= 3) {
+      autoArea = calculatePolygonArea(mapPoints);
+      if (autoArea > 0) {
+        formData.estimatedSize = autoArea.toFixed(1);
+        formData.sizeUnit = 'sqmeters';
+      }
+    } else {
+      autoArea = null;
+    }
+    // Auto-detect the district from the plotted boundary centroid
+    if (mapPoints.length >= 1) {
+      const centroid = {
+        lat: mapPoints.reduce((s, p) => s + p.lat, 0) / mapPoints.length,
+        lng: mapPoints.reduce((s, p) => s + p.lng, 0) / mapPoints.length
+      };
+      detectDistrict(centroid).then(d => {
+        autoDistrict = d;
+        if (d) formData.district = d;
+      });
+    } else {
+      autoDistrict = null;
     }
   }
 
@@ -48,28 +80,21 @@
       polylineLayer = null;
     }
     formData.hasMapBoundary = false;
+    updateAutoInfo();
   }
 
   function confirmBoundary() {
-    if (mapPoints.length <= 2) {
-      // Mock points for demo if user didn't draw
-      mapPoints = [
-        { lat: -13.9833, lng: 33.7833 },
-        { lat: -13.9840, lng: 33.7833 },
-        { lat: -13.9840, lng: 33.7840 },
-        { lat: -13.9833, lng: 33.7840 }
-      ];
+    if (mapPoints.length < 3) {
+      alert('Please plot at least 3 boundary points on the map to define the boundary.');
+      return;
     }
-    
+
     formData.hasMapBoundary = true;
     formData.mapBoundary = mapPoints;
+
+    // Auto-calculate area (m²) and auto-detect district from the boundary
+    updateAutoInfo();
     showMapSection = false;
-    
-    // Auto-update location details based on map drawing (Simulated Reverse Geocoding)
-    if (!formData.district) formData.district = 'Lilongwe';
-    if (!formData.traditionalAuthority) formData.traditionalAuthority = 'Chief Nkhoma';
-    if (!formData.village) formData.village = 'Area 25';
-    if (!formData.estimatedSize) formData.estimatedSize = '20m x 20m';
   }
 
   // Form data
@@ -538,9 +563,22 @@
                 </button>
                 
                 {#if showMapSection}
-                  <div class="map-container" style="margin-top: 1rem; height: 400px; border-radius: 8px; overflow: hidden; border: 2px solid #e2e8f0; z-index: 1;">
+                  <div class="map-container" style="margin-top: 1rem; height: 70vh; min-height: 550px; border-radius: 8px; overflow: hidden; border: 2px solid #e2e8f0; z-index: 1;">
                     <div id="boundary-map" style="width: 100%; height: 100%;"></div>
                   </div>
+                  {#if mapPoints.length > 0}
+                    <div style="margin-top: 0.75rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+                      <span class="status-badge {mapPoints.length >= 3 ? 'success' : 'warning'}" style="padding:0.35rem 0.75rem;border-radius:999px;font-size:0.8125rem;font-weight:600;background:{mapPoints.length >= 3 ? '#dcfce7' : '#fef3c7'};color:{mapPoints.length >= 3 ? '#166534' : '#92400e'};">
+                        {mapPoints.length} point{mapPoints.length !== 1 ? 's' : ''} plotted{mapPoints.length >= 3 ? ' — boundary ready' : ' — need at least 3'}
+                      </span>
+                      {#if autoArea !== null}
+                        <span class="status-badge" style="padding:0.35rem 0.75rem;border-radius:999px;font-size:0.8125rem;font-weight:600;background:#e0f2fe;color:#075985;">Area: {formatArea(autoArea)}</span>
+                      {/if}
+                      {#if autoDistrict}
+                        <span class="status-badge" style="padding:0.35rem 0.75rem;border-radius:999px;font-size:0.8125rem;font-weight:600;background:#e0f2fe;color:#075985;">📍 {autoDistrict} detected</span>
+                      {/if}
+                    </div>
+                  {/if}
                   <div style="margin-top: 1rem; display: flex; gap: 1rem;">
                     <button class="btn btn-secondary btn-sm" type="button" on:click={clearMapPoints}>Clear Points</button>
                     <button class="btn btn-primary btn-sm" type="button" on:click={confirmBoundary}>Save Map Boundary</button>
@@ -551,7 +589,12 @@
                   <div class="map-result">
                     <div class="map-info">
                       <span class="status-badge success">Boundary complete <Check class="w-4 h-4 inline" /></span>
-                      <span class="area-info">Approx. 400m² (20m x 20m)</span>
+                      {#if autoArea !== null}
+                        <span class="area-info">{formatArea(autoArea)}</span>
+                      {/if}
+                      {#if autoDistrict}
+                        <span class="area-info">📍 {autoDistrict} district</span>
+                      {/if}
                     </div>
                   </div>
                 {/if}
@@ -620,21 +663,24 @@
             </div>
 
             <div class="form-group">
-              <label class="form-label">Size (optional)</label>
+              <label class="form-label">Size (optional — auto-calculated if you drew the boundary)</label>
               <div class="size-input-group">
                 <input 
                   type="text" 
                   class="form-input" 
                   bind:value={formData.estimatedSize}
-                  placeholder="e.g., 20 x 20"
+                  placeholder="Auto-filled from map boundary"
                 />
                 <select class="form-select" bind:value={formData.sizeUnit}>
-                  <option value="meters">meters</option>
                   <option value="sqmeters">m²</option>
+                  <option value="meters">meters</option>
                   <option value="acres">acres</option>
                   <option value="hectares">hectares</option>
                 </select>
               </div>
+              {#if autoArea !== null}
+                <p class="form-hint">✓ Auto-calculated from your plotted boundary: <strong>{formatArea(autoArea)}</strong></p>
+              {/if}
             </div>
           </div>
 
@@ -668,7 +714,7 @@
               <div class="review-item">
                 <div class="review-label">Location</div>
                 <div class="review-value">
-                  {formData.village}, {formData.district}
+                  {formData.village}, {formData.district}{#if autoDistrict} <span style="color:#007A3D;font-size:0.8em;">✓ auto-detected</span>{/if}
                 </div>
               </div>
               

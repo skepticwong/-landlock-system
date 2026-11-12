@@ -11,6 +11,7 @@ from utils.security import (
     verify_password,
     token_required
 )
+from utils.notifications import create_notification
 
 # Initialize Flask app first
 app = Flask(__name__)
@@ -297,9 +298,25 @@ def create_plot(current_user):
     if len(data.get("points", [])) < 3:
         return jsonify({"error": "At least 3 boundary points required"}), 400
 
+    # ── Plot type / state-held land ──
+    # Only officials & superusers may declare a plot as government, military or city land.
+    # Such plots are created as protected state land and cannot be touched afterwards.
+    from utils.plot_protection import is_state_plot_type
+    plot_type = (data.pop('plot_type', None) or 'private').strip().lower()
+    if plot_type != 'private' and not (current_user.is_superuser or current_user.is_official):
+        return jsonify({"error": "Only land officials can register government, military or city plots"}), 403
+
+    # Officials registering a private plot: it is owned by them but unprotected.
+    # Strip client-supplied protection flags — they are derived server-side.
+    data.pop('is_protected', None)
+    data.pop('created_by_official', None)
+
     # Add user_id to the plot data
     plot_data = {
         **data,
+        "plot_type": plot_type,
+        "is_protected": 1 if is_state_plot_type(plot_type) else 0,
+        "created_by_official": current_user.id if (current_user.is_superuser or current_user.is_official) else None,
         "user_id": current_user.id,
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat()
@@ -370,12 +387,24 @@ def update_plot(current_user, plot_id):
     
     plot = plots[0]
     
+    # ── State-held plots (government/military/city) are locked for everyone ──
+    from utils.plot_protection import is_plot_protected, locked_response
+    if is_plot_protected(plot):
+        err, code = locked_response()
+        return jsonify(err), code
+
     # Check if user owns this plot
     if plot['user_id'] != current_user.id:
         return jsonify({"error": "Unauthorized"}), 403
     
     data = request.json
     import json
+
+    # Nobody may flip a plot into/out of protected state through this endpoint
+    data.pop('plot_type', None)
+    data.pop('is_protected', None)
+    data.pop('created_by_official', None)
+    data.pop('user_id', None)
     
     # Track changes for history
     changes = {}
@@ -711,8 +740,13 @@ def get_official_caseload(current_user):
     all_plots = db.select("plots", order="created_at DESC")
 
     import json
+    from utils.plot_protection import is_plot_protected
     caseload = []
     for plot in all_plots:
+        # State-held plots (government/military/city) are pre-approved by design;
+        # exclude them from the citizen approval workflow.
+        if is_plot_protected(plot):
+            continue
         # Get user info for each plot
         user = db.select("users", eq={"id": plot.get('user_id')})
         user_name = user[0].get('full_name', 'Unknown') if user else 'Unknown'
@@ -843,6 +877,13 @@ def approve_plot(current_user, plot_id):
         return jsonify({"error": "Plot not found"}), 404
 
     plot = plots[0]
+
+    # State-held plots (government/military/city) are managed directly by officials —
+    # they cannot be pushed through the citizen approve/reject workflow.
+    from utils.plot_protection import is_plot_protected
+    if is_plot_protected(plot):
+        return jsonify({"error": "State-held plots cannot be approved or rejected through the caseload. "
+                                 "Use the official plot management endpoint."}), 403
 
     # Update plot status and record who approved it
     update_data = {
@@ -1014,6 +1055,12 @@ def create_listing(current_user):
     plots = db.select('plots', eq={'id': plot_id})
     if not plots:
         return jsonify({'error': 'Plot not found'}), 404
+
+    # State-held plots (government/military/city) can never be listed
+    from utils.plot_protection import is_plot_protected, locked_response
+    if is_plot_protected(plots[0]):
+        err, code = locked_response()
+        return jsonify(err), code
     
     plot = plots[0]
     if plot['user_id'] != current_user.id:
@@ -1215,6 +1262,15 @@ def register_interest(current_user, listing_id):
 
     interest = db.insert('buyer_interests', interest_data)
     if interest:
+        buyer = db.select('users', eq={'id': current_user.id})
+        buyer_name = buyer[0].get('full_name', 'A buyer') if buyer else 'A buyer'
+        create_notification(
+            user_id=listing['user_id'],
+            type_='interest',
+            title='New Interest in Your Listing',
+            message=f"{buyer_name} is interested in {listing.get('title', 'your listing')}.",
+            link='/transactions',
+        )
         return jsonify(interest), 201
     return jsonify({'error': 'Failed to register interest'}), 500
 
