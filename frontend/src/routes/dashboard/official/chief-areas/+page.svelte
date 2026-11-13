@@ -29,6 +29,8 @@
   let draftMarkers: any[] = [];
   let mapLayers: any[] = [];
   let statusMessage = '';
+  let renamingAreaId: number | null = null;
+  let renameValue = '';
 
   const headers = () => ({
     'Content-Type': 'application/json',
@@ -285,6 +287,18 @@
     }
   }
 
+  function areaTypeLabel(t: string): string {
+    const map: Record<string, string> = {
+      ta: 'Traditional Authority', village: 'Village', ward: 'Ward', district: 'District'
+    };
+    return map[t] || t;
+  }
+
+  function districtName(id: string): string {
+    const d = districts.find((x: any) => x.id === id);
+    return d ? d.name : id.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
   function deleteVillageVector(area: any) {
     if (!confirm(`Delete the vector for ${area.area_name}? This removes the chief area too.`)) return;
     fetch(`http://localhost:5000/api/official/chief-areas/${area.id}`, {
@@ -303,6 +317,43 @@
       headers: headers(),
       body: JSON.stringify({ chief_id: chiefId || null, villages: area.villages || [], area_name: area.area_name, district_id: area.district_id })
     });
+    await loadData();
+    renderMap();
+  }
+
+  function startRename(area: any) {
+    renamingAreaId = area.id;
+    renameValue = area.area_name;
+  }
+
+  function cancelRename() {
+    renamingAreaId = null;
+    renameValue = '';
+  }
+
+  async function saveRename(area: any) {
+    const newName = renameValue.trim();
+    if (!newName) {
+      statusMessage = 'Name cannot be empty.';
+      return;
+    }
+    const res = await fetch(`http://localhost:5000/api/official/chief-areas/${area.id}`, {
+      method: 'PUT',
+      headers: headers(),
+      body: JSON.stringify({
+        chief_id: area.chief_id || null,
+        villages: area.villages || [],
+        area_name: newName,
+        district_id: area.district_id
+      })
+    });
+    if (!res.ok) {
+      statusMessage = (await res.json()).error || 'Failed to rename area.';
+      return;
+    }
+    statusMessage = `Area renamed to "${newName}".`;
+    cancelRename();
+    invalidateAreaBoundaries();
     await loadData();
     renderMap();
   }
@@ -426,8 +477,28 @@
         {#each chiefAreas as area}
           <article class="area-card">
             <div>
-              <h3><MapPin size={18} /> {area.area_name}</h3>
+              {#if renamingAreaId === area.id}
+                <div class="rename-row">
+                  <input
+                    bind:value={renameValue}
+                    on:keydown={(e) => {
+                      if (e.key === 'Enter') saveRename(area);
+                      if (e.key === 'Escape') cancelRename();
+                    }}
+                    autofocus
+                  />
+                  <button class="button success small-btn" on:click={() => saveRename(area)} title="Save"><Save size={14} /></button>
+                  <button class="button secondary small-btn" on:click={cancelRename} title="Cancel">✕</button>
+                </div>
+              {:else}
+                <h3>
+                  <MapPin size={18} /> {area.area_name}
+                  <button class="icon-btn" on:click={() => startRename(area)} title="Rename"><Pencil size={13} /></button>
+                </h3>
+              {/if}
               {#if area.boundary}<span class="badge mapped">Mapped</span>{:else}<span class="badge">No boundary</span>{/if}
+              {#if area.area_type}<span class="badge type-badge">{areaTypeLabel(area.area_type)}</span>{/if}
+              {#if area.district_id}<span class="badge district-badge"><Layers size={11} /> {districtName(area.district_id)}</span>{/if}
             </div>
             <label>
               Assigned chief
@@ -480,10 +551,20 @@
   .saved-vectors h4 { margin: .25rem 0 .5rem; }
   .saved-vector-row { display: flex; justify-content: space-between; align-items: center; padding: .4rem .6rem; border: 1px solid #e2e8f0; border-radius: 7px; margin-bottom: .4rem; }
   .delete.small { height: 28px; padding: 0 .55rem; font-size: .8rem; }
+  .rename-row { display: flex; gap: .35rem; align-items: center; }
+  .rename-row input { flex: 1; height: 32px; }
+  .small-btn { height: 28px; padding: 0 .5rem; }
+  .icon-btn {
+    border: 0; background: transparent; cursor: pointer; color: #64748b;
+    padding: 2px; border-radius: 4px; display: inline-flex;
+  }
+  .icon-btn:hover { color: #2563eb; background: #eff6ff; }
   .areas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
   .area-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 1rem; }
   .area-card h3 { display: flex; align-items: center; gap: .35rem; } .badge { color: #92400e; background: #fef3c7; padding: .2rem .45rem; border-radius: 999px; font-size: .75rem; }
   .mapped { color: #166534; background: #dcfce7; } .villages { font-size: .85rem; color: #64748b; }
+  .type-badge { color: #1e40af; background: #dbeafe; }
+  .district-badge { color: #0f766e; background: #ccfbf1; display: inline-flex; align-items: center; gap: .25rem; }
   .delete { margin-top: .75rem; height: 32px; color: #b91c1c; background: #fee2e2; }
   @media (max-width: 900px) { .controls { grid-template-columns: 1fr 1fr; } .map-container { height: 420px; } }
 </style>
