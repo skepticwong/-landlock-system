@@ -2,10 +2,9 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { status } from '$lib/store';
-  import { Check, Camera, Shield } from 'lucide-svelte';
+  import { Check, Shield } from 'lucide-svelte';
 
   let formData: {
-    nationalId: string;
     fullName: string;
     phone: string;
     district: string;
@@ -13,19 +12,14 @@
     village: string;
     relationshipToLand: string;
     additionalNotes: string;
-    nidFrontPhoto: string | null;
-    nidBackPhoto: string | null;
   } = {
-    nationalId: '',
     fullName: '',
     phone: '',
     district: '',
     traditionalAuthority: '',
     village: '',
     relationshipToLand: '',
-    additionalNotes: '',
-    nidFrontPhoto: null,
-    nidBackPhoto: null
+    additionalNotes: ''
   };
 
   let error = '';
@@ -99,14 +93,6 @@
   let availableVillages: typeof villages.kapeni = [];
 
   function validateForm() {
-    // National ID validation - extremely permissive, just check length
-    const nid = formData.nationalId.trim();
-    if (!nid || nid.length < 1) {
-      error = 'Please enter the National ID Number';
-      return false;
-    }
-    formData.nationalId = nid.toUpperCase(); // Store cleaned version
-
     // Full name validation
     if (!formData.fullName || formData.fullName.trim().length < 3) {
       error = 'Full name is required (no initials)';
@@ -122,12 +108,6 @@
     // Village validation
     if (!formData.district || !formData.traditionalAuthority || !formData.village) {
       error = 'Please select district, traditional authority, and village';
-      return false;
-    }
-
-    // ID photos validation
-    if (!formData.nidFrontPhoto || !formData.nidBackPhoto) {
-      error = 'Both National ID photos are required';
       return false;
     }
 
@@ -158,7 +138,6 @@
       generatedPin = Math.floor(1000 + Math.random() * 9000).toString();
 
       const payload = {
-        national_id: formData.nationalId,
         full_name: formData.fullName,
         phone: formattedPhone,
         district: formData.district,
@@ -166,8 +145,6 @@
         village: formData.village,
         relationship_to_land: formData.relationshipToLand,
         additional_notes: formData.additionalNotes,
-        nid_front_photo: formData.nidFrontPhoto,
-        nid_back_photo: formData.nidBackPhoto,
         temporary_pin: generatedPin,
         registered_by_officer: true
       };
@@ -210,49 +187,15 @@
     }
   }
 
-  function handlePhotoUpload(event: Event, side: 'front' | 'back') {
-    const target = event.target as HTMLInputElement;
-    if (!target) return;
-    const file = target.files?.[0];
-    if (file) {
-      // Validate file type and size
-      if (!file.type.startsWith('image/')) {
-        error = 'Please select an image file';
-        return;
-      }
-      
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        error = 'Image file must be less than 5MB';
-        return;
-      }
-
-      // Convert to base64 for upload
-      const reader = new FileReader();
-      reader.onload = (e: ProgressEvent<FileReader>) => {
-        if (e.target?.result && typeof e.target.result === 'string') {
-          if (side === 'front') {
-            formData.nidFrontPhoto = e.target.result;
-          } else {
-            formData.nidBackPhoto = e.target.result;
-          }
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  }
-
   function resetForm() {
     formData = {
-      nationalId: '',
       fullName: '',
       phone: '',
       district: '',
       traditionalAuthority: '',
       village: '',
       relationshipToLand: '',
-      additionalNotes: '',
-      nidFrontPhoto: null,
-      nidBackPhoto: null
+      additionalNotes: ''
     };
     generatedPin = '';
     availableTAs = [];
@@ -300,7 +243,7 @@
           <strong>Temporary PIN:</strong> <span class="pin-number">{generatedPin}</span>
         </div>
         <p class="success-instructions">
-          Please inform the citizen of their PIN. They will receive an SMS confirmation.
+          Share the temporary PIN with the citizen. After signing in, they can submit their National ID from their profile for administrator review.
         </p>
       </div>
     {:else}
@@ -311,20 +254,6 @@
       {/if}
 
       <form on:submit|preventDefault={handleSubmit}>
-        <!-- National ID Number -->
-        <div class="form-group">
-          <label for="nationalId">National ID Number</label>
-          <input
-            id="nationalId"
-            type="text"
-            placeholder="e.g. 8Z7X5Y2W"
-            maxlength="32"
-            bind:value={formData.nationalId}
-            disabled={isLoading}
-          />
-          <div class="field-hint">Enter the ID exactly as it appears on the citizen's card</div>
-        </div>
-
         <!-- Full Name -->
         <div class="form-group">
           <label for="fullName">Full Name</label>
@@ -335,7 +264,7 @@
             bind:value={formData.fullName}
             disabled={isLoading}
           />
-          <div class="field-hint">Enter exactly as written on National ID (no nicknames, no initials)</div>
+          <div class="field-hint">The citizen can submit their National ID for administrator review after signing in.</div>
         </div>
 
         <!-- Phone Number -->
@@ -377,58 +306,6 @@
             </select>
           </div>
           <div class="field-hint">Ensures citizen is registered in the correct jurisdiction</div>
-        </div>
-
-        <!-- National ID Photos -->
-        <div class="form-group">
-          <div class="section-label">National ID Photos</div>
-          <div class="photo-upload-section">
-            <div class="photo-upload-group">
-              <label for="nidFront" class="photo-label">Front of National ID</label>
-              <div class="photo-upload-area">
-                <input
-                  id="nidFront"
-                  name="nidFront"
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  on:change={(e) => handlePhotoUpload(e, 'front')}
-                  class="hidden"
-                  disabled={isLoading}
-                />
-                <label for="nidFront" class="photo-upload-btn" class:disabled={isLoading}>
-                  <Camera class="w-5 h-5 inline" /> Take Photo
-                </label>
-                {#if formData.nidFrontPhoto}
-                  <span class="photo-success"><Check class="w-4 h-4 inline" /> Front photo captured</span>
-                {/if}
-              </div>
-              <div class="field-hint">ID number, name, photo, and expiry must be visible</div>
-            </div>
-
-            <div class="photo-upload-group">
-              <label for="nidBack" class="photo-label">Back of National ID</label>
-              <div class="photo-upload-area">
-                <input
-                  id="nidBack"
-                  name="nidBack"
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  on:change={(e) => handlePhotoUpload(e, 'back')}
-                  class="hidden"
-                  disabled={isLoading}
-                />
-                <label for="nidBack" class="photo-upload-btn" class:disabled={isLoading}>
-                  <Camera class="w-5 h-5 inline" /> Take Photo
-                </label>
-                {#if formData.nidBackPhoto}
-                  <span class="photo-success"><Check class="w-4 h-4 inline" /> Back photo captured</span>
-                {/if}
-              </div>
-              <div class="field-hint">Barcode and security features must be visible</div>
-            </div>
-          </div>
         </div>
 
         <!-- Relationship to Land -->
@@ -574,72 +451,10 @@
     margin-top: 0.25rem;
   }
 
-  .section-label {
-    display: block;
-    font-weight: 600;
-    font-size: 0.875rem;
-    margin-bottom: 0.5rem;
-    color: #334155;
-  }
-
   .location-selects {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 0.75rem;
-  }
-
-  .photo-upload-section {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .photo-upload-group {
-    border: 2px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 1rem;
-    background: #f8fafc;
-  }
-
-  .photo-label {
-    font-weight: 600;
-    font-size: 0.875rem;
-    color: #334155;
-    margin-bottom: 0.5rem;
-  }
-
-  .photo-upload-area {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .photo-upload-btn {
-    padding: 0.5rem 1rem;
-    background: #f1f5f9;
-    color: #475569;
-    border: 2px solid #e2e8f0;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.875rem;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .photo-upload-btn:hover:not(.disabled) {
-    background: #e2e8f0;
-    border-color: var(--color-primary);
-  }
-
-  .photo-upload-btn.disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .photo-success {
-    color: #059669;
-    font-size: 0.875rem;
-    font-weight: 500;
   }
 
   .radio-group {
@@ -804,9 +619,5 @@
       gap: 0.5rem;
     }
     
-    .photo-upload-area {
-      flex-direction: column;
-      align-items: stretch;
-    }
   }
 </style>

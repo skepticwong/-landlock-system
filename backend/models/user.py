@@ -14,6 +14,7 @@ class User:
         self.is_active = kwargs.get('is_active', True)
         self.is_superuser = kwargs.get('is_superuser', False)
         self.role = kwargs.get('role', 'citizen')
+        self.identity_status = kwargs.get('identity_status', 'unverified')
         self.created_at = kwargs.get('created_at', datetime.utcnow().isoformat())
         self.updated_at = kwargs.get('updated_at', datetime.utcnow().isoformat())
 
@@ -88,6 +89,7 @@ class User:
             "is_active": self.is_active,
             "is_superuser": self.is_superuser,
             "role": self.role,
+            "identity_status": self.identity_status,
             "created_at": self.created_at,
             "updated_at": self.updated_at
         }

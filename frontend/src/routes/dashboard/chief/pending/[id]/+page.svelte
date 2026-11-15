@@ -20,10 +20,10 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Could not load claim details');
       claim = data;
+      loading = false;
       await renderMap();
     } catch (err) {
       error = err instanceof Error ? err.message : 'Could not load claim details';
-    } finally {
       loading = false;
     }
   }
@@ -33,7 +33,8 @@
     await tick();
     const mapElement = document.getElementById('claim-map');
     if (!mapElement) return;
-    const L = (await import('leaflet')).default;
+    const leaflet = await import('leaflet');
+    const L = leaflet.default || leaflet;
     if (map) map.remove();
     map = L.map(mapElement, { scrollWheelZoom: false });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {

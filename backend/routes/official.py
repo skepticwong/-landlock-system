@@ -14,6 +14,7 @@ from db.sqlite_db import db
 from datetime import datetime
 from utils.security import get_password_hash
 import json
+import uuid
 
 official_bp = Blueprint('official', __name__)
 
@@ -37,16 +38,7 @@ def register_chief(current_user):
     """
     Register a new chief account.
     
-    Required body:
-    {
-        "national_id": "<national ID>",
-        "full_name": "<chief's full name>",
-        "phone": "<phone number>",
-        "temporary_pin": "<temporary PIN (4-6 digits)>",
-        "district": "<district name>",
-        "traditional_authority": "<TA name>",
-        "village": "<village name>"
-    }
+    Identity documents are submitted by the chief after account creation.
     
     The system will:
     1. Validate the official has permission
@@ -59,7 +51,7 @@ def register_chief(current_user):
         return jsonify({"error": "Unauthorized - officials only"}), 403
     
     data = request.json
-    required_fields = ['national_id', 'full_name', 'phone', 'temporary_pin']
+    required_fields = ['full_name', 'phone', 'temporary_pin']
     if not all(k in data for k in required_fields):
         return jsonify({"error": "Missing required fields"}), 400
     
@@ -69,21 +61,19 @@ def register_chief(current_user):
     if len(data['temporary_pin']) < 4:
         return jsonify({"error": "PIN must be at least 4 characters"}), 400
     
-    # Check if user already exists
-    existing_user = db.select("users", eq={"username": data['national_id']})
     existing_phone = db.select("users", eq={"phone": phone})
     
-    if existing_user or existing_phone:
-        return jsonify({"error": "User with this National ID or phone already exists"}), 400
+    if existing_phone:
+        return jsonify({"error": "A user with this phone number already exists"}), 400
     
     # Create new chief user
     user_data = {
-        "username": data['national_id'],
-        "email": f"{data['national_id']}@landlock.gov.mw",
+        "username": f"chief-{uuid.uuid4().hex}",
         "phone": phone,
         "password_hash": get_password_hash(data['temporary_pin']),
         "full_name": data['full_name'],
         "role": "chief",
+        "identity_status": "unverified",
         "is_active": True,
         "is_superuser": False,
         "created_at": datetime.now().isoformat(),

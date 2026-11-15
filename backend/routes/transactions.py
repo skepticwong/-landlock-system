@@ -49,6 +49,16 @@ def _get_plot_by_id(plot_id):
     return rows[0] if rows else None
 
 
+def _identity_verification_error(current_user):
+    if current_user.is_superuser or getattr(current_user, "identity_status", "unverified") == "verified":
+        return None
+    status = getattr(current_user, "identity_status", "unverified")
+    return jsonify({
+        "error": "Identity verification is required before participating in a land sale or transfer.",
+        "identity_status": status,
+    }), 403
+
+
 def _normalize_phone(phone):
     if not phone:
         return ""
@@ -140,6 +150,10 @@ def initiate_sale(current_user):
     6. Create the transaction in 'pending_buyer' status
     """
     data = request.json
+    identity_error = _identity_verification_error(current_user)
+    if identity_error:
+        return identity_error
+
     required = ["plot_id", "buyer_phone", "witness_phone"]
     if not all(k in data for k in required):
         return jsonify({"error": "plot_id, buyer_phone, and witness_phone are required"}), 400
@@ -287,6 +301,10 @@ def initiate_sale(current_user):
 @token_required
 def buyer_confirm(current_user, transaction_id):
     """Buyer confirms they accept the purchase."""
+    identity_error = _identity_verification_error(current_user)
+    if identity_error:
+        return identity_error
+
     tx_rows = db.select("transactions", eq={"id": transaction_id})
     if not tx_rows:
         return jsonify({"error": "Transaction not found"}), 404
@@ -354,6 +372,9 @@ def approve_transaction(current_user, transaction_id):
     """
     data = request.json or {}
     code = data.get("approval_code", "").strip().upper()
+    identity_error = _identity_verification_error(current_user)
+    if identity_error:
+        return identity_error
 
     tx_rows = db.select("transactions", eq={"id": transaction_id})
     if not tx_rows:
