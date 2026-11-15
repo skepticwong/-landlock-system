@@ -47,6 +47,31 @@ def init_db(retry_count=0):
             cursor.execute("ALTER TABLE users ADD COLUMN password_attempts INTEGER DEFAULT 0")
         if 'must_change_password' not in user_columns:
             cursor.execute("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0")
+        if 'identity_status' not in user_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN identity_status TEXT NOT NULL DEFAULT 'unverified'")
+
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS identity_verifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            national_id_encrypted TEXT NOT NULL,
+            front_path TEXT NOT NULL,
+            front_mime TEXT NOT NULL,
+            back_path TEXT NOT NULL,
+            back_mime TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            submitted_at TEXT NOT NULL,
+            reviewed_at TEXT,
+            reviewed_by INTEGER,
+            review_reason TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (reviewed_by) REFERENCES users(id)
+        )
+        ''')
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_identity_verifications_status
+        ON identity_verifications(status, submitted_at)
+        ''')
         
         # Create Plots Table
         # For JSON arrays like points, we can store as TEXT and serialize/deserialize

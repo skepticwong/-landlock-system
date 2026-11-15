@@ -25,7 +25,6 @@
   let showAssignMode = false;
   
   let newChief = {
-    national_id: '',
     full_name: '',
     phone: '',
     temporary_pin: ''
@@ -119,19 +118,14 @@
       });
       
       if (response.ok) {
-        const result = await response.json();
-        message = 'Chief registered successfully!';
+        message = 'Chief registered. They can submit their ID from their profile for administrator review.';
         messageType = 'success';
         
         // Reset form
         newChief = {
-          national_id: '',
           full_name: '',
           phone: '',
-          temporary_pin: '',
-          district: '',
-          traditional_authority: '',
-          village: ''
+          temporary_pin: ''
         };
         showRegisterForm = false;
         
@@ -415,10 +409,6 @@
           <div class="card-body">
             <form on:submit|preventDefault={registerChief}>
               <div class="form-grid">
-                <div class="form-group">
-                  <label>National ID *</label>
-                  <input type="text" bind:value={newChief.national_id} required placeholder="Enter national ID" />
-                </div>
                 <div class="form-group">
                   <label>Full Name *</label>
                   <input type="text" bind:value={newChief.full_name} required placeholder="Enter full name" />

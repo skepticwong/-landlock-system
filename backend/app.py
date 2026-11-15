@@ -4,6 +4,7 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 import requests
 import os
+import uuid
 from config import config
 from utils.security import (
     create_access_token, 
@@ -15,6 +16,11 @@ from utils.notifications import create_notification
 
 # Initialize Flask app first
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 11 * 1024 * 1024
+
+@app.errorhandler(413)
+def request_entity_too_large(_error):
+    return jsonify({"error": "The request is too large. Each ID image must be 5 MB or smaller."}), 413
 
 def normalize_phone(phone):
     if not phone:
@@ -41,6 +47,10 @@ from db.sqlite_db import db
 # Admin Routes
 from routes.admin import admin_bp
 app.register_blueprint(admin_bp)
+
+# Manual identity verification routes
+from routes.identity import identity_bp
+app.register_blueprint(identity_bp)
 
 # Transaction Approval Routes (v2 — multi-party approval)
 from routes.transactions import tx_bp
@@ -74,9 +84,9 @@ def health():
 # Auth routes
 @app.route("/api/auth/register", methods=["POST"])
 def register():
-    data = request.json
+    data = request.json or {}
     # LandLock specific required fields
-    required_fields = ['national_id', 'full_name', 'email', 'password', 'phone']
+    required_fields = ['full_name', 'email', 'password', 'phone']
     if not all(k in data for k in required_fields):
         return jsonify({"error": "Missing required fields"}), 400
     if len(data['password']) < 8:
@@ -84,23 +94,24 @@ def register():
 
     phone = normalize_phone(data['phone'])
 
-    # Check if user exists (by national_id/username, email, or phone)
-    existing_user = db.select("users", eq={"username": data['national_id']})
+    # Identity documents are collected after account creation for admin review.
     existing_email = db.select("users", eq={"email": data['email']})
     existing_phone = db.select("users", eq={"phone": phone})
     
-    if existing_user or existing_email or existing_phone:
-        return jsonify({"error": "User with this National ID, email, or phone already exists"}), 400
+    if existing_email or existing_phone:
+        return jsonify({"error": "User with this email or phone already exists"}), 400
 
     # Create new user
     user_data = {
-        "username": data['national_id'], # Store National ID in username column
+        "username": f"user-{uuid.uuid4().hex}",
         "email": data['email'],
         "phone": phone,
         "password_hash": get_password_hash(data['password']),
         "full_name": data['full_name'],
+        "role": "citizen",
         "is_active": True,
         "is_superuser": False,
+        "identity_status": "unverified",
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat(),
         "password_attempts": 0,
@@ -122,7 +133,8 @@ def register():
                 "id": user['id'],
                 "username": user['username'],
                 "email": user['email'],
-                "phone": user['phone']
+                "phone": user['phone'],
+                "identity_status": user.get('identity_status', 'unverified')
             }
         }), 201
     else:
@@ -131,29 +143,31 @@ def register():
 @app.route("/api/auth/register-citizen", methods=["POST"])
 @token_required
 def register_citizen(current_user):
-    data = request.json
-    required_fields = ['national_id', 'full_name', 'phone', 'temporary_pin']
+    if not current_user.is_superuser and not current_user.is_official:
+        return jsonify({"error": "Only officials can register citizens"}), 403
+
+    data = request.json or {}
+    required_fields = ['full_name', 'phone', 'temporary_pin']
     if not all(k in data for k in required_fields):
         return jsonify({"error": "Missing required fields"}), 400
 
     phone = normalize_phone(data['phone'])
 
-    # Check if user exists (by national_id/username, or phone)
-    existing_user = db.select("users", eq={"username": data['national_id']})
     existing_phone = db.select("users", eq={"phone": phone})
     
-    if existing_user or existing_phone:
-        return jsonify({"error": "User with this National ID or phone already exists"}), 400
+    if existing_phone:
+        return jsonify({"error": "A user with this phone number already exists"}), 400
 
     # Create new user
     user_data = {
-        "username": data['national_id'],
-        "email": f"{data['national_id']}@landlock.gov.mw",
+        "username": f"user-{uuid.uuid4().hex}",
         "phone": phone,
         "password_hash": get_password_hash(data['temporary_pin']),
         "full_name": data['full_name'],
+        "role": "citizen",
         "is_active": True,
         "is_superuser": False,
+        "identity_status": "unverified",
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat()
     }
@@ -166,7 +180,8 @@ def register_citizen(current_user):
             "user": {
                 "id": user['id'],
                 "username": user['username'],
-                "phone": user['phone']
+                "phone": user['phone'],
+                "identity_status": user.get('identity_status', 'unverified')
             }
         }), 201
     else:
@@ -506,6 +521,18 @@ def get_current_user(current_user):
         user_data.pop('hashed_password', None)
         # Ensure is_staff is exposed for frontend gating
         user_data['is_staff'] = current_user.is_official
+        if current_user.is_superuser:
+            user_data["identity_status"] = "not_required"
+        else:
+            submissions = db.select(
+                "identity_verifications",
+                eq={"user_id": current_user.id},
+                order="id DESC",
+            )
+            latest = submissions[0] if submissions else None
+            user_data["identity_status"] = latest["status"] if latest else "unverified"
+            if latest and latest["status"] == "rejected":
+                user_data["identity_review_reason"] = latest.get("review_reason")
         return jsonify(user_data)
     return jsonify({"error": "User not found"}), 404
 
@@ -606,6 +633,12 @@ def get_user_transactions(current_user):
 @app.route("/api/transactions", methods=["POST"])
 @token_required
 def create_transaction(current_user):
+    if not current_user.is_superuser and current_user.identity_status != "verified":
+        return jsonify({
+            "error": "Identity verification is required before creating a transaction.",
+            "identity_status": current_user.identity_status,
+        }), 403
+
     data = request.json
     required = ["transaction_type", "plot_id"]
     if not all(k in data for k in required):
@@ -1042,6 +1075,12 @@ def serve_plot_media(filename):
 @app.route('/api/listings', methods=['POST'])
 @token_required
 def create_listing(current_user):
+    if not current_user.is_superuser and current_user.identity_status != "verified":
+        return jsonify({
+            "error": "Identity verification is required before listing land for sale or lease.",
+            "identity_status": current_user.identity_status,
+        }), 403
+
     data = request.json
     required = ['title', 'listing_type']
     if not all(k in data for k in required):

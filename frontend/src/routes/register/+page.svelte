@@ -2,33 +2,27 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { status } from '$lib/store';
-  import { Globe, Camera, Check, Lock } from 'lucide-svelte';
+  import { Globe, Check, Lock } from 'lucide-svelte';
   let formData: {
-    nationalId: string;
     fullName: string;
     phone: string;
     email: string;
     password: string;
     confirmPassword: string;
     language: 'en' | 'ny' | 'tum';
-    nidFrontPhoto: string | null;
-    nidBackPhoto: string | null;
   } = {
-    nationalId: '',
     fullName: '',
     phone: '',
     email: '',
     password: '',
     confirmPassword: '',
-    language: 'en',
-    nidFrontPhoto: null,
-    nidBackPhoto: null
+    language: 'en'
   };
   let error = '';
   let isLoading = false;
   let isOnline = true;
   let currentStep = 1;
-  const stepTitles = ['Identity', 'Contact', 'National ID Photos', 'Create Password'];
+  const stepTitles = ['Your Details', 'Contact', 'Create Password'];
   // Language options
   const languages = [
     { code: 'en', name: 'English' },
@@ -36,13 +30,6 @@
     { code: 'tum', name: 'Tumbuka' }
   ];
   function validateForm() {
-    // National ID validation - extremely permissive, just check length
-    const nid = formData.nationalId.trim();
-    if (!nid || nid.length < 1) {
-      error = 'Please enter your National ID Number';
-      return false;
-    }
-    formData.nationalId = nid.toUpperCase(); // Store cleaned version
     // Full name validation
     if (!formData.fullName || formData.fullName.trim().length < 3) {
       error = 'Full name is required (no initials)';
@@ -66,11 +53,6 @@
       error = 'Passwords do not match';
       return false;
     }
-    // ID photos validation
-    if (!formData.nidFrontPhoto || !formData.nidBackPhoto) {
-      error = 'Both National ID photos are required';
-      return false;
-    }
     return true;
   }
 
@@ -78,10 +60,6 @@
     error = '';
 
     if (currentStep === 1) {
-      if (!formData.nationalId.trim()) {
-        error = 'Please enter your National ID Number';
-        return false;
-      }
       if (!formData.fullName.trim() || formData.fullName.trim().length < 3) {
         error = 'Full name is required (no initials)';
         return false;
@@ -95,10 +73,7 @@
         error = 'Please enter a valid email address';
         return false;
       }
-    } else if (currentStep === 3 && (!formData.nidFrontPhoto || !formData.nidBackPhoto)) {
-      error = 'Both National ID photos are required';
-      return false;
-    } else if (currentStep === 4) {
+    } else if (currentStep === 3) {
       if (formData.password.length < 8) {
         error = 'Password must be at least 8 characters';
         return false;
@@ -114,7 +89,7 @@
 
   function nextStep() {
     if (!validateStep()) return;
-    if (currentStep < 4) {
+    if (currentStep < 3) {
       currentStep += 1;
     }
   }
@@ -133,14 +108,11 @@
       // Format phone number (remove spaces)
       const formattedPhone = formData.phone.replace(/\s/g, '');
       const payload = {
-        national_id: formData.nationalId,
         full_name: formData.fullName,
         phone: formattedPhone,
         email: formData.email,
         password: formData.password,
-        language: formData.language,
-        nid_front_photo: formData.nidFrontPhoto,
-        nid_back_photo: formData.nidBackPhoto
+        language: formData.language
       };
       const response = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
@@ -172,35 +144,6 @@
       isLoading = false;
     }
   }
-  function handlePhotoUpload(event: Event, side: 'front' | 'back') {
-    const target = event.target as HTMLInputElement;
-    if (!target) return;
-    const file = target.files?.[0];
-    if (file) {
-      // Validate file type and size
-      if (!file.type.startsWith('image/')) {
-        error = 'Please select an image file';
-        return;
-      }
-      
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        error = 'Image file must be less than 5MB';
-        return;
-      }
-      // Convert to base64 for upload
-      const reader = new FileReader();
-      reader.onload = (e: ProgressEvent<FileReader>) => {
-        if (e.target?.result && typeof e.target.result === 'string') {
-          if (side === 'front') {
-            formData.nidFrontPhoto = e.target.result;
-          } else {
-            formData.nidBackPhoto = e.target.result;
-          }
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  }
   onMount(() => {
     isOnline = navigator.onLine;
     // Detect device language
@@ -226,17 +169,17 @@
           </div>
           <div>
             <h1>Account Creation</h1>
-            <p>Secure your identity on the Land Registry</p>
+            <p>Create your account now and submit ID for administrator review later.</p>
           </div>
         </div>
 
         <form on:submit|preventDefault={handleSubmit}>
           <div class="wizard-progress" aria-label="Registration progress">
             <div class="wizard-progress-text">
-              Step {currentStep} of 4 <span>{stepTitles[currentStep - 1]}</span>
+              Step {currentStep} of 3 <span>{stepTitles[currentStep - 1]}</span>
             </div>
             <div class="wizard-progress-track">
-              <span style={`width: ${(currentStep / 4) * 100}%`}></span>
+              <span style={`width: ${(currentStep / 3) * 100}%`}></span>
             </div>
             <div class="wizard-steps">
               {#each stepTitles as title, index}
@@ -252,24 +195,10 @@
             </div>
           </div>
 
-          <!-- 1 · Identity -->
+          <!-- 1 · Account details -->
           {#if currentStep === 1}
           <fieldset class="form-section">
-            <legend><span class="step-num">1</span> Identity</legend>
-
-            <div class="form-group">
-              <label for="nationalId">National ID Number</label>
-              <input
-                id="nationalId"
-                type="text"
-                placeholder="e.g. 8Z7X5Y2W"
-                maxlength="32"
-                autocomplete="off"
-                bind:value={formData.nationalId}
-                disabled={isLoading}
-              />
-              <div class="field-hint">Enter your ID exactly as it appears on your card</div>
-            </div>
+            <legend><span class="step-num">1</span> Your Details</legend>
 
             <div class="form-group">
               <label for="fullName">Full Name</label>
@@ -281,7 +210,7 @@
                 bind:value={formData.fullName}
                 disabled={isLoading}
               />
-              <div class="field-hint">Must match the name on your National ID</div>
+              <div class="field-hint">You can submit your ID for administrator review after creating your account.</div>
             </div>
           </fieldset>
           {/if}
@@ -334,65 +263,10 @@
           </fieldset>
           {/if}
 
-          <!-- 3 · ID photos -->
+          <!-- 3 · Password -->
           {#if currentStep === 3}
           <fieldset class="form-section">
-            <legend><span class="step-num">3</span> National ID Photos</legend>
-
-            <div class="photo-upload-section">
-              <div class="photo-upload-group" class:done={formData.nidFrontPhoto}>
-                <div class="photo-label">Front of National ID</div>
-                <div class="photo-upload-area">
-                  <input
-                    id="nidFront"
-                    name="nidFront"
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    on:change={(e) => handlePhotoUpload(e, 'front')}
-                    class="hidden"
-                    disabled={isLoading}
-                  />
-                  <label for="nidFront" class="photo-upload-btn" class:disabled={isLoading}>
-                    <Camera size={16} /> Take Photo
-                  </label>
-                  {#if formData.nidFrontPhoto}
-                    <span class="photo-success"><Check size={16} /> Front photo captured</span>
-                  {/if}
-                </div>
-                <div class="field-hint">Must show ID number, name, photo, and expiry</div>
-              </div>
-
-              <div class="photo-upload-group" class:done={formData.nidBackPhoto}>
-                <div class="photo-label">Back of National ID</div>
-                <div class="photo-upload-area">
-                  <input
-                    id="nidBack"
-                    name="nidBack"
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    on:change={(e) => handlePhotoUpload(e, 'back')}
-                    class="hidden"
-                    disabled={isLoading}
-                  />
-                  <label for="nidBack" class="photo-upload-btn" class:disabled={isLoading}>
-                    <Camera size={16} /> Take Photo
-                  </label>
-                  {#if formData.nidBackPhoto}
-                    <span class="photo-success"><Check size={16} /> Back photo captured</span>
-                  {/if}
-                </div>
-                <div class="field-hint">Must show barcode, signatures, and security features</div>
-              </div>
-            </div>
-          </fieldset>
-          {/if}
-
-          <!-- 4 · Password -->
-          {#if currentStep === 4}
-          <fieldset class="form-section">
-            <legend><span class="step-num">4</span> Create Password</legend>
+            <legend><span class="step-num">3</span> Create Password</legend>
 
             <div class="form-row">
               <div class="form-group">
@@ -437,7 +311,7 @@
                 </button>
               {/if}
 
-              {#if currentStep < 4}
+              {#if currentStep < 3}
                 <button type="button" class="btn-register" on:click={nextStep} disabled={isLoading}>
                   Continue
                 </button>
@@ -464,7 +338,7 @@
         </div>
 
         <div class="security-notice">
-          <Lock size={14} /> Your data is encrypted and secure. Takes less than 2 minutes.
+          <Lock size={14} /> Create your account first; ID verification is submitted securely from your profile.
         </div>
       </div>
     </div>
@@ -479,7 +353,7 @@
         <h2>LandLock</h2>
         <p>Secure Land Registry for Malawi</p>
         <ul class="brand-points">
-          <li><Check size={18} />Verified, tamper-proof ownership records</li>
+          <li><Check size={18} />Track land claims and account updates</li>
           <li><Check size={18} />Available in English, Chichewa and Tumbuka</li>
           <li><Check size={18} />SMS alerts on every change to your land</li>
         </ul>
@@ -784,100 +658,6 @@
 
   .hint-tight {
     margin-top: -0.4rem;
-  }
-
-  /* ═══════════ Photo upload ═══════════ */
-  .photo-upload-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-  }
-
-  .photo-upload-group {
-    padding: 0.9rem;
-    border: 1.5px dashed #c4cbd2;
-    border-radius: 12px;
-    background: var(--field);
-    transition: border-color 0.2s, background 0.2s;
-  }
-
-  .photo-upload-group:hover {
-    border-color: var(--green);
-    background: #f3faf6;
-  }
-
-  .photo-upload-group.done {
-    border-style: solid;
-    border-color: var(--green);
-    background: #f3faf6;
-  }
-
-  .photo-label {
-    margin-bottom: 0.6rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text);
-  }
-
-  .photo-upload-area {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  /* The real file input stays focusable but is visually hidden; its label is the button. */
-  .photo-upload-area input.hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
-  .photo-upload-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    margin: 0;
-    padding: 0.5rem 0.9rem;
-    border: 1px solid var(--green);
-    border-radius: 8px;
-    background: #fff;
-    color: var(--green);
-    font-weight: 600;
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: background 0.2s, color 0.2s;
-  }
-
-  .photo-upload-btn:hover:not(.disabled) {
-    background: var(--green);
-    color: #fff;
-  }
-
-  input.hidden:focus-visible + .photo-upload-btn {
-    outline: 3px solid rgba(0, 122, 61, 0.35);
-    outline-offset: 2px;
-  }
-
-  .photo-upload-btn.disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .photo-success {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    color: var(--green);
-    font-size: 0.85rem;
-    font-weight: 600;
   }
 
   /* ═══════════ Sticky footer: error + submit ═══════════ */
@@ -1185,13 +965,6 @@
     }
     .hint-tight {
       margin-top: 0;
-    }
-    .photo-upload-area {
-      flex-direction: column;
-      align-items: stretch;
-    }
-    .photo-upload-btn {
-      justify-content: center;
     }
     input,
     .select-input {
