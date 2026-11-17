@@ -5,7 +5,7 @@
   import { MapPin, Plus, Edit, Trash2, Save, X, User, Layers } from 'lucide-svelte';
   import Navbar from '$lib/components/Navbar.svelte';
   import { initMap, addPolygon } from '$lib/map.js';
-  import { showToast, confirmDialog } from '$lib/notify.js';
+  import { showToast, confirmDialog } from '$lib/notify';
 
   let currentUser = null;
   let chiefAreas = [];

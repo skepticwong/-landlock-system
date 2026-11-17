@@ -266,7 +266,7 @@ def get_chief_recent_activity(current_user):
         return jsonify([])
     
     # Get recent plots in jurisdiction
-    plots = db.select("plots", order="created_at DESC", limit=10)
+    plots = db.select("plots", order="created_at DESC")[:10]
     recent_activity = []
     
     for plot in plots:

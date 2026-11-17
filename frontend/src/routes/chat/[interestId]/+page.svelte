@@ -6,7 +6,7 @@
   import { fetchMessages, sendMessage, fetchMyInterests } from '$lib/api.js';
   import Navbar from '$lib/components/Navbar.svelte';
   import PaymentModal from '$lib/components/PaymentModal.svelte';
-  import { showToast } from '$lib/notify.js';
+  import { showToast } from '$lib/notify';
 
   let interestId: number;
   let messages: any[] = [];

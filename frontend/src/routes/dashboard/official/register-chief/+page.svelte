@@ -5,7 +5,7 @@
   import { UserPlus, User, MapPin, Shield, ArrowLeft, Save, Trash2, Layers } from 'lucide-svelte';
   import Navbar from '$lib/components/Navbar.svelte';
   import { initMap, addPolygon } from '$lib/map.js';
-  import { confirmDialog, promptDialog, showToast } from '$lib/notify.js';
+  import { confirmDialog, promptDialog, showToast } from '$lib/notify';
 
   const API = 'http://localhost:5000';
 

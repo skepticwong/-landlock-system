@@ -1,11 +1,11 @@
-﻿<script lang="ts">
+<script lang="ts">
   import { onMount, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
   import { Shield, FileText, DollarSign, RefreshCw, MapPin, Paperclip, Check, User, ClipboardList } from 'lucide-svelte';
   import Navbar from '$lib/components/Navbar.svelte';
   import { calculatePolygonArea, formatArea, detectDistrict, loadDistrictBoundaries } from '$lib/geo';
-  import { showToast } from '$lib/notify.js';
+  import { showToast } from '$lib/notify';
 
   // Step management
   let currentStep = 1;
@@ -49,7 +49,7 @@
   }
 
   function updateAutoInfo() {
-    // Auto-calculate area in mÂ² from the plotted boundary
+    // Auto-calculate area in m² from the plotted boundary
     if (mapPoints.length >= 3) {
       autoArea = calculatePolygonArea(mapPoints);
       if (autoArea > 0) {
@@ -93,7 +93,7 @@
     formData.hasMapBoundary = true;
     formData.mapBoundary = mapPoints;
 
-    // Auto-calculate area (mÂ²) and auto-detect district from the boundary
+    // Auto-calculate area (m²) and auto-detect district from the boundary
     updateAutoInfo();
     showMapSection = false;
   }
@@ -633,13 +633,13 @@
                   {#if mapPoints.length > 0}
                     <div style="margin-top: 0.75rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
                       <span class="status-badge {mapPoints.length >= 3 ? 'success' : 'warning'}" style="padding:0.35rem 0.75rem;border-radius:999px;font-size:0.8125rem;font-weight:600;background:{mapPoints.length >= 3 ? '#dcfce7' : '#fef3c7'};color:{mapPoints.length >= 3 ? '#166534' : '#92400e'};">
-                        {mapPoints.length} point{mapPoints.length !== 1 ? 's' : ''} plotted{mapPoints.length >= 3 ? ' â€” boundary ready' : ' â€” need at least 3'}
+                        {mapPoints.length} point{mapPoints.length !== 1 ? 's' : ''} plotted{mapPoints.length >= 3 ? ' — boundary ready' : ' — need at least 3'}
                       </span>
                       {#if autoArea !== null}
                         <span class="status-badge" style="padding:0.35rem 0.75rem;border-radius:999px;font-size:0.8125rem;font-weight:600;background:#e0f2fe;color:#075985;">Area: {formatArea(autoArea)}</span>
                       {/if}
                       {#if autoDistrict}
-                        <span class="status-badge" style="padding:0.35rem 0.75rem;border-radius:999px;font-size:0.8125rem;font-weight:600;background:#e0f2fe;color:#075985;">ðŸ“ {autoDistrict} detected</span>
+                        <span class="status-badge" style="padding:0.35rem 0.75rem;border-radius:999px;font-size:0.8125rem;font-weight:600;background:#e0f2fe;color:#075985;">📍 {autoDistrict} detected</span>
                       {/if}
                     </div>
                   {/if}
@@ -657,7 +657,7 @@
                         <span class="area-info">{formatArea(autoArea)}</span>
                       {/if}
                       {#if autoDistrict}
-                        <span class="area-info">ðŸ“ {autoDistrict} district</span>
+                        <span class="area-info">📍 {autoDistrict} district</span>
                       {/if}
                     </div>
                   </div>
@@ -727,7 +727,7 @@
             </div>
 
             <div class="form-group">
-              <label class="form-label">Size (optional â€” auto-calculated if you drew the boundary)</label>
+              <label class="form-label">Size (optional — auto-calculated if you drew the boundary)</label>
               <div class="size-input-group">
                 <input 
                   type="text" 
@@ -736,14 +736,14 @@
                   placeholder="Auto-filled from map boundary"
                 />
                 <select class="form-select" bind:value={formData.sizeUnit}>
-                  <option value="sqmeters">mÂ²</option>
+                  <option value="sqmeters">m²</option>
                   <option value="meters">meters</option>
                   <option value="acres">acres</option>
                   <option value="hectares">hectares</option>
                 </select>
               </div>
               {#if autoArea !== null}
-                <p class="form-hint">âœ“ Auto-calculated from your plotted boundary: <strong>{formatArea(autoArea)}</strong></p>
+                <p class="form-hint">✓ Auto-calculated from your plotted boundary: <strong>{formatArea(autoArea)}</strong></p>
               {/if}
             </div>
           </div>
@@ -778,7 +778,7 @@
               <div class="review-item">
                 <div class="review-label">Location</div>
                 <div class="review-value">
-                  {formData.village}, {formData.district}{#if autoDistrict} <span style="color:#007A3D;font-size:0.8em;">âœ“ auto-detected</span>{/if}
+                  {formData.village}, {formData.district}{#if autoDistrict} <span style="color:#007A3D;font-size:0.8em;">✓ auto-detected</span>{/if}
                 </div>
               </div>
               
@@ -878,9 +878,9 @@
             <div class="status-section">
               <div class="status-badge" class:success={submissionStatus === 'success'} class:warning={submissionStatus === 'offline'}>
                 {#if submissionStatus === 'success'}
-                  ðŸŸ¢ Submitted (online)
+                  🟢 Submitted (online)
                 {:else if submissionStatus === 'offline'}
-                  ðŸŸ¡ Saved offline (will submit when online)
+                  🟡 Saved offline (will submit when online)
                 {/if}
               </div>
             </div>

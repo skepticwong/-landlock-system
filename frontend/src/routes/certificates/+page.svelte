@@ -4,7 +4,7 @@
   import { browser } from '$app/environment';
   import { Home, FileText, Smartphone, MapPin, User, Ruler, Calendar, Lock, Building, Link, RefreshCw, Globe, Download, Share2, Check, Shield } from 'lucide-svelte';
   import Navbar from '$lib/components/Navbar.svelte';
-  import { showToast } from '$lib/notify.js';
+  import { showToast } from '$lib/notify';
 
   // Real data from backend
   let certificates = [];

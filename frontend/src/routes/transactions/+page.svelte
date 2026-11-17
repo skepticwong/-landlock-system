@@ -5,7 +5,7 @@
   import { MessageSquare, DollarSign, FileText, MapPin, Ruler, Check, Handshake, Home, Clock, User, Calendar as CalendarIcon, Trash2, Eye, Phone, Mail } from 'lucide-svelte';
   import { fetchTransactions, fetchMyListings, deleteListing, listingImageUrl, fetchBuyerInterests, approveBuyerInterest, rejectBuyerInterest, fetchMyInterests } from '$lib/api.js';
   import Navbar from '$lib/components/Navbar.svelte';
-  import { showToast, confirmDialog } from '$lib/notify.js';
+  import { showToast, confirmDialog } from '$lib/notify';
 
   // Data from database
   let myListings: any[] = [];

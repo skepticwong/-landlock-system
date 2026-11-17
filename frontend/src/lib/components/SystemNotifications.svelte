@@ -1,40 +1,67 @@
-<script>
+<script lang="ts">
   // System-styled notification host: renders all toasts and the
   // global confirm/prompt dialog. Mounted once in the root layout.
   import { fly } from "svelte/transition";
-  import { toasts, dismissToast, dialog, _resolveDialog } from "$lib/notify.js";
+  import {
+    toasts,
+    dismissToast,
+    dialog,
+    _resolveDialog,
+    _pauseToast,
+    _resumeToast,
+  } from "$lib/notify";
   import { tick } from "svelte";
+  import type { DialogState } from "$lib/notify";
 
-  function closeDialog(result) {
+  let dialogEl: HTMLElement | undefined;
+
+  function closeDialog(result: unknown) {
     _resolveDialog(result);
   }
 
   async function submitPrompt() {
-    const d = $dialog;
+    const d = $dialog as DialogState | null;
     if (!d) return;
     const value = (d.value ?? "").trim();
     if (!value) return;
     _resolveDialog(value);
   }
 
-  function onDialogKeydown(e) {
+  function onDialogKeydown(e: KeyboardEvent) {
     if (!$dialog) return;
     if (e.key === "Escape") {
       e.preventDefault();
       closeDialog(null);
-    } else if (e.key === "Enter" && $dialog.type === "prompt") {
+    } else if (e.key === "Enter" && ($dialog as DialogState).type === "prompt") {
       e.preventDefault();
       submitPrompt();
+    } else if (e.key === "Tab") {
+      // Focus trap: keep Tab cycling inside the dialog
+      const focusables = dialogEl?.querySelectorAll<HTMLElement>(
+        'button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusables || focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   }
 
-  $: if ($dialog && $dialog.type === "prompt") {
+  $: if ($dialog && dialogEl) {
     (async () => {
       await tick();
-      const el = document.getElementById("system-dialog-input");
-      if (el) {
-        el.focus();
-        el.select();
+      const input = document.getElementById("system-dialog-input");
+      if (input) {
+        input.focus();
+        (input as HTMLInputElement).select();
+      } else {
+        dialogEl?.querySelector("button")?.focus();
       }
     })();
   }
@@ -47,11 +74,22 @@
       class="sys-toast {t.type}"
       role="status"
       transition:fly={{ y: -12, duration: 180 }}
+      on:mouseenter={() => _pauseToast(t.id)}
+      on:mouseleave={() => _resumeToast(t.id)}
     >
       <div class="sys-toast-icon">
         {#if t.type === "success"}✓{:else if t.type === "error"}!{:else}i{/if}
       </div>
       <span class="sys-toast-msg">{t.message}</span>
+      {#if t.action}
+        <button
+          class="sys-toast-action"
+          on:click={() => {
+            dismissToast(t.id);
+            t.action!.onClick();
+          }}>{t.action.label}</button
+        >
+      {/if}
       <button
         class="sys-toast-close"
         aria-label="Dismiss notification"
@@ -71,40 +109,42 @@
       role="dialog"
       aria-modal="true"
       aria-labelledby="sys-dialog-title"
+      bind:this={dialogEl}
     >
-      <h3 id="sys-dialog-title">{$dialog.title}</h3>
-      {#if $dialog.message}
-        <p class="sys-dialog-msg">{$dialog.message}</p>
+      <h3 id="sys-dialog-title">{($dialog as DialogState).title}</h3>
+      {#if ($dialog as DialogState).message}
+        <p class="sys-dialog-msg">{($dialog as DialogState).message}</p>
       {/if}
 
-      {#if $dialog.type === "prompt"}
+      {#if ($dialog as DialogState).type === "prompt"}
         <input
           id="system-dialog-input"
           class="sys-dialog-input"
-          type="text"
-          bind:value={$dialog.value}
-          placeholder={$dialog.placeholder}
+          type={($dialog as DialogState).inputType || "text"}
+          bind:value={($dialog as DialogState).value}
+          placeholder={($dialog as DialogState).placeholder}
         />
       {/if}
 
       <div class="sys-dialog-actions">
         <button
           class="sys-dialog-btn cancel"
-          on:click={() => closeDialog($dialog.type === "prompt" ? null : false)}
+          on:click={() =>
+            closeDialog(($dialog as DialogState).type === "prompt" ? null : false)}
         >
-          {$dialog.cancelText}
+          {($dialog as DialogState).cancelText}
         </button>
         <button
           class="sys-dialog-btn confirm"
-          class:danger={$dialog.danger}
+          class:danger={($dialog as DialogState).danger}
           on:click={() =>
             closeDialog(
-              $dialog.type === "prompt"
-                ? ($dialog.value ?? "").trim() || null
+              ($dialog as DialogState).type === "prompt"
+                ? (($dialog as DialogState).value ?? "").trim() || null
                 : true,
             )}
         >
-          {$dialog.confirmText}
+          {($dialog as DialogState).confirmText}
         </button>
       </div>
     </div>
@@ -175,8 +215,21 @@
     flex: 1;
   }
 
+  .sys-toast-action {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    padding: 0 0.25rem;
+    font-family: inherit;
+    white-space: nowrap;
+  }
+
   .sys-toast-close {
-    margin-left: auto;
     border: 0;
     background: transparent;
     color: inherit;

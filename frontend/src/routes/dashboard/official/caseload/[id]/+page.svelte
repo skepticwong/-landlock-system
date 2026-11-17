@@ -16,7 +16,7 @@
     Ruler,
   } from "lucide-svelte";
   import Navbar from "$lib/components/Navbar.svelte";
-  import { showToast, confirmDialog } from "$lib/notify.js";
+  import { showToast, confirmDialog } from "$lib/notify";
 
   const API = "http://localhost:5000";
   let claim: any = null;

@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import { MapPin, Ruler, Calendar, Search, Filter, X } from 'lucide-svelte';
   import { fetchListings, listingImageUrl, registerListingInterest } from '$lib/api.js';
-  import { showToast } from '$lib/notify.js';
+  import { showToast } from '$lib/notify';
   import Navbar from '$lib/components/Navbar.svelte';
 
   let listings: any[] = [];
