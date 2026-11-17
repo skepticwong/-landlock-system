@@ -4,6 +4,7 @@
   import { browser } from '$app/environment';
   import { Home, FileText, Smartphone, MapPin, User, Ruler, Calendar, Lock, Building, Link, RefreshCw, Globe, Download, Share2, Check, Shield } from 'lucide-svelte';
   import Navbar from '$lib/components/Navbar.svelte';
+  import { showToast } from '$lib/notify.js';
 
   // Real data from backend
   let certificates = [];
@@ -112,7 +113,7 @@
 
   async function shareCertificate(certificate) {
     if (!isOnline) {
-      alert('Sharing requires an internet connection');
+      showToast('error', 'Sharing requires an internet connection');
       return;
     }
 
@@ -131,7 +132,7 @@
       } else {
         // On desktop, copy to clipboard
         await navigator.clipboard.writeText(shareLink);
-        alert('Share link copied to clipboard!');
+        showToast('success', 'Share link copied to clipboard!');
       }
     } catch (error) {
       console.error('Share failed:', error);
@@ -142,7 +143,7 @@
 
   function verifyOnline(certificate) {
     if (!isOnline) {
-      alert('Online verification requires an internet connection');
+      showToast('error', 'Online verification requires an internet connection');
       return;
     }
     

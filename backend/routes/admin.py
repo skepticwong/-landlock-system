@@ -4,9 +4,90 @@ from utils.security import admin_required, get_password_hash
 from db.sqlite_db import db
 from datetime import datetime
 import json
+import uuid
 from data.geographic_areas import get_all_districts, get_traditional_authorities, get_villages, get_area_name, get_district_boundaries
 
 admin_bp = Blueprint('admin', __name__)
+
+
+def _normalize_phone(phone):
+    cleaned = "".join(c for c in str(phone or "") if c.isdigit() or c == "+").strip()
+    if cleaned.startswith("+265"):
+        return "0" + cleaned[4:]
+    if cleaned.startswith("265"):
+        return "0" + cleaned[3:]
+    return cleaned
+
+
+def _has_admin_access(user):
+    if "admin_access" in user:
+        return bool(user.get("admin_access"))
+    return bool(user.get("is_superuser", False)) and user.get("role") != "official"
+
+
+
+@admin_bp.route("/api/admin/citizen-registrations", methods=["GET"])
+@admin_required
+def get_pending_citizen_registrations(current_user):
+    registrations = db.select(
+        "citizen_registrations",
+        eq={"status": "pending"},
+        order="submitted_at ASC",
+    )
+    pending = []
+    for registration in registrations:
+        users = db.select("users", eq={"id": registration["user_id"]})
+        if not users:
+            continue
+        user = users[0]
+        registration["citizen"] = {
+            "id": user["id"],
+            "full_name": user.get("full_name"),
+            "phone": user.get("phone"),
+            "email": user.get("email"),
+        }
+        if registration.get("registered_by"):
+            registrars = db.select("users", eq={"id": registration["registered_by"]})
+            registration["registrar_name"] = (
+                registrars[0].get("full_name") if registrars else None
+            )
+        pending.append(registration)
+    return jsonify(pending)
+
+
+@admin_bp.route(
+    "/api/admin/citizen-registrations/<int:registration_id>/review",
+    methods=["POST"],
+)
+@admin_required
+def review_citizen_registration(current_user, registration_id):
+    data = request.get_json(silent=True) or {}
+    decision = data.get("decision")
+    reason = (data.get("reason") or "").strip()
+    if decision not in ("approved", "rejected"):
+        return jsonify({"error": "Decision must be 'approved' or 'rejected'."}), 400
+    if decision == "rejected" and not reason:
+        return jsonify({"error": "A reason is required when rejecting a registration."}), 400
+
+    reviewed_at = datetime.now().isoformat()
+    reviewed = db.review_citizen_registration(
+        registration_id,
+        decision,
+        reason,
+        current_user.id,
+        reviewed_at,
+    )
+    if not reviewed:
+        registrations = db.select("citizen_registrations", eq={"id": registration_id})
+        if not registrations:
+            return jsonify({"error": "Citizen registration not found."}), 404
+        return jsonify({"error": "This citizen registration has already been reviewed."}), 409
+
+    return jsonify({
+        "message": f"Citizen registration {decision}.",
+        "registration_status": decision,
+    })
+
 
 # Admin Dashboard - System Statistics
 @admin_bp.route("/api/admin/dashboard", methods=["GET"])
@@ -19,9 +100,15 @@ def admin_dashboard(current_user):
     # Count active users
     active_users = [u for u in total_users if u.get('is_active', True)]
     # Count superusers
-    admins = [u for u in total_users if u.get('is_superuser', False)]
+    admins = [u for u in total_users if _has_admin_access(u)]
     # Count pending transactions
     pending_transactions = [t for t in total_transactions if t.get('status') == 'pending']
+    recent_users = total_users[-5:] if len(total_users) > 5 else total_users
+    for user in recent_users:
+        user['is_superuser'] = _has_admin_access(user)
+        user['admin_access'] = user['is_superuser']
+        user.pop('password_hash', None)
+        user.pop('hashed_password', None)
     
     return jsonify({
         "total_users": len(total_users),
@@ -30,7 +117,7 @@ def admin_dashboard(current_user):
         "total_plots": len(total_plots),
         "total_transactions": len(total_transactions),
         "pending_transactions": len(pending_transactions),
-        "recent_users": total_users[-5:] if len(total_users) > 5 else total_users
+        "recent_users": recent_users
     })
 
 # User Management - View All Users
@@ -41,10 +128,58 @@ def get_all_users(current_user):
     
     # Remove sensitive data
     for user in users:
+        user['is_superuser'] = _has_admin_access(user)
+        user['admin_access'] = user['is_superuser']
         user.pop('password_hash', None)
         user.pop('hashed_password', None)
     
     return jsonify(users)
+
+
+@admin_bp.route("/api/admin/users", methods=["POST"])
+@admin_required
+def create_admin_user(current_user):
+    data = request.get_json(silent=True) or {}
+    full_name = (data.get("full_name") or "").strip()
+    phone = _normalize_phone(data.get("phone"))
+    email = (data.get("email") or "").strip() or None
+    role = data.get("role")
+    admin_access = data.get("admin_access", False)
+    temporary_pin = str(data.get("temporary_pin") or "")
+
+    if not full_name or not phone or role not in ("citizen", "chief", "official", "admin"):
+        return jsonify({"error": "Full name, phone, and a valid role are required."}), 400
+    if not isinstance(admin_access, bool):
+        return jsonify({"error": "admin_access must be a boolean."}), 400
+    if len(temporary_pin) < 4:
+        return jsonify({"error": "Temporary PIN must be at least 4 characters."}), 400
+    if db.select("users", eq={"phone": phone}):
+        return jsonify({"error": "A user with this phone number already exists."}), 409
+    if email and db.select("users", eq={"email": email}):
+        return jsonify({"error": "A user with this email already exists."}), 409
+
+    now = datetime.now().isoformat()
+    user = db.insert("users", {
+        "username": f"{role}-{uuid.uuid4().hex}",
+        "email": email,
+        "phone": phone,
+        "password_hash": get_password_hash(temporary_pin),
+        "full_name": full_name,
+        "role": role,
+        "is_active": True,
+        "is_superuser": role == "admin" or admin_access,
+        "admin_access": role == "admin" or admin_access,
+        "identity_status": "unverified",
+        "must_change_password": True,
+        "created_at": now,
+        "updated_at": now,
+    })
+    if not user:
+        return jsonify({"error": "Could not create user."}), 500
+    user.pop("password_hash", None)
+    user.pop("hashed_password", None)
+    return jsonify({"message": "User created successfully.", "user": user}), 201
+
 
 # User Management - Get Single User
 @admin_bp.route("/api/admin/users/<int:user_id>", methods=["GET"])
@@ -55,6 +190,8 @@ def get_user(current_user, user_id):
         return jsonify({"error": "User not found"}), 404
     
     user = users[0]
+    user['is_superuser'] = _has_admin_access(user)
+    user['admin_access'] = user['is_superuser']
     user.pop('password_hash', None)
     user.pop('hashed_password', None)
     
@@ -64,23 +201,66 @@ def get_user(current_user, user_id):
 @admin_bp.route("/api/admin/users/<int:user_id>", methods=["PUT"])
 @admin_required
 def update_user(current_user, user_id):
-    data = request.json
+    data = request.get_json(silent=True) or {}
     users = db.select("users", eq={"id": user_id})
     
     if not users:
         return jsonify({"error": "User not found"}), 404
     
+    user = users[0]
     update_data = {}
     if 'is_active' in data:
+        if not isinstance(data['is_active'], bool):
+            return jsonify({"error": "is_active must be a boolean."}), 400
         update_data['is_active'] = data['is_active']
-    if 'is_superuser' in data:
-        update_data['is_superuser'] = data['is_superuser']
+    if 'admin_access' in data:
+        if not isinstance(data['admin_access'], bool):
+            return jsonify({"error": "admin_access must be a boolean."}), 400
+        update_data['admin_access'] = data['admin_access']
+        update_data['is_superuser'] = data['admin_access']
+    if 'role' in data:
+        role = data['role']
+        if role not in ("citizen", "chief", "official", "admin"):
+            return jsonify({"error": "Role must be citizen, chief, official, or admin."}), 400
+        update_data['role'] = role
+        if role == "admin":
+            update_data['admin_access'] = True
+            update_data['is_superuser'] = True
+        elif user.get('role') == "admin" and 'admin_access' not in data:
+            update_data['admin_access'] = False
+            update_data['is_superuser'] = False
+        elif 'admin_access' not in data:
+            admin_access = _has_admin_access(user)
+            update_data['admin_access'] = admin_access
+            update_data['is_superuser'] = admin_access
+    elif 'is_superuser' in data:
+        return jsonify({"error": "Change administrator privileges through admin_access."}), 400
     if 'full_name' in data:
-        update_data['full_name'] = data['full_name']
+        full_name = (data['full_name'] or '').strip()
+        if not full_name:
+            return jsonify({"error": "Full name cannot be empty."}), 400
+        update_data['full_name'] = full_name
     if 'email' in data:
-        update_data['email'] = data['email']
+        email = (data['email'] or '').strip() or None
+        duplicates = db.select("users", eq={"email": email}) if email else []
+        if duplicates and duplicates[0]['id'] != user_id:
+            return jsonify({"error": "A user with this email already exists."}), 409
+        update_data['email'] = email
     if 'phone' in data:
-        update_data['phone'] = data['phone']
+        phone = _normalize_phone(data['phone'])
+        if not phone:
+            return jsonify({"error": "Phone number cannot be empty."}), 400
+        duplicates = db.select("users", eq={"phone": phone})
+        if duplicates and duplicates[0]['id'] != user_id:
+            return jsonify({"error": "A user with this phone number already exists."}), 409
+        update_data['phone'] = phone
+
+    target_admin_access = update_data.get('admin_access', _has_admin_access(user))
+    target_active = update_data.get('is_active', bool(user.get('is_active', True)))
+    if user_id == current_user.id and (not target_admin_access or not target_active):
+        return jsonify({"error": "You cannot revoke your own administrator access."}), 400
+    if not update_data:
+        return jsonify({"error": "No supported changes were provided."}), 400
     
     update_data['updated_at'] = datetime.now().isoformat()
     
@@ -95,14 +275,20 @@ def update_user(current_user, user_id):
 @admin_bp.route("/api/admin/users/<int:user_id>/reset-pin", methods=["POST"])
 @admin_required
 def reset_user_pin(current_user, user_id):
-    data = request.json
-    new_pin = data.get('new_pin')
+    data = request.get_json(silent=True) or {}
+    new_pin = str(data.get('new_pin') or '')
     
     if not new_pin or len(new_pin) < 4:
         return jsonify({"error": "PIN must be at least 4 characters"}), 400
+
+    if not db.select("users", eq={"id": user_id}):
+        return jsonify({"error": "User not found."}), 404
     
+    password_hash = get_password_hash(new_pin)
     update_data = {
-        "password_hash": get_password_hash(new_pin),
+        "password_hash": password_hash,
+        "hashed_password": password_hash,
+        "must_change_password": True,
         "updated_at": datetime.now().isoformat()
     }
     
@@ -117,16 +303,9 @@ def reset_user_pin(current_user, user_id):
 @admin_bp.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
 @admin_required
 def delete_user(current_user, user_id):
-    # Prevent deleting yourself
-    if user_id == current_user.id:
-        return jsonify({"error": "Cannot delete your own account"}), 400
-    
-    result = db.delete("users", eq={"id": user_id})
-    
-    if result:
-        return jsonify({"message": "User deleted successfully"})
-    else:
-        return jsonify({"error": "Failed to delete user"}), 500
+    return jsonify({
+        "error": "Permanent deletion is disabled. Deactivate the account to revoke access while preserving its records."
+    }), 410
 
 # Plot Oversight - View All Plots
 @admin_bp.route("/api/admin/plots", methods=["GET"])
@@ -240,7 +419,7 @@ def get_system_summary(current_user):
     user_stats = {
         "total": len(users),
         "active": len([u for u in users if u.get('is_active', True)]),
-        "admins": len([u for u in users if u.get('is_superuser', False)])
+        "admins": len([u for u in users if _has_admin_access(u)])
     }
     
     # Plot statistics
@@ -421,8 +600,8 @@ def delete_chief_area(current_user, area_id):
 def get_all_chiefs(current_user):
     users = db.select("users", order="created_at DESC")
     
-    # Filter users with role 'chief' or is_superuser (admins can also be chiefs)
-    chiefs = [u for u in users if u.get('role') == 'chief' or u.get('is_superuser', False)]
+    # Admins with a chief role remain eligible; admin access alone is not a chief role.
+    chiefs = [u for u in users if u.get('role') == 'chief']
     
     # Remove sensitive data
     for chief in chiefs:
@@ -442,26 +621,33 @@ def get_district_boundaries_api():
 @admin_bp.route("/api/admin/users/<int:user_id>/role", methods=["PUT"])
 @admin_required
 def assign_user_role(current_user, user_id):
-    data = request.json
+    data = request.get_json(silent=True) or {}
     new_role = data.get('role')
     
-    if new_role not in ['citizen', 'chief', 'admin']:
+    if new_role not in ['citizen', 'chief', 'official', 'admin']:
         return jsonify({"error": "Invalid role"}), 400
     
     users = db.select("users", eq={"id": user_id})
     if not users:
         return jsonify({"error": "User not found"}), 404
     
+    user = users[0]
+    admin_access = data.get('admin_access', _has_admin_access(user))
+    if not isinstance(admin_access, bool):
+        return jsonify({"error": "admin_access must be a boolean."}), 400
+    if new_role == 'admin':
+        admin_access = True
+    elif user.get('role') == 'admin' and 'admin_access' not in data:
+        admin_access = False
+    if user_id == current_user.id and (not admin_access or not user.get('is_active', True)):
+        return jsonify({"error": "You cannot revoke your own administrator access."}), 400
+
     update_data = {
         "role": new_role,
+        "is_superuser": admin_access,
+        "admin_access": admin_access,
         "updated_at": datetime.now().isoformat()
     }
-    
-    # If role is admin, also set is_superuser
-    if new_role == 'admin':
-        update_data['is_superuser'] = True
-    else:
-        update_data['is_superuser'] = False
     
     result = db.update("users", update_data, eq={"id": user_id})
     

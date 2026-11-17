@@ -43,6 +43,8 @@
   // ── User identity (name + role + avatar) ──
   let profileName = userName;
   let profileRole = userRole || "Citizen";
+  let hasAdminAccess = false;
+  let isOfficialProfile = false;
   let avatarUrl: string | null = null;
 
   // ── Search state ──
@@ -100,7 +102,10 @@
       }
       const u = await res.json();
       if (u.full_name || u.username) profileName = u.full_name || u.username;
-      if (u.is_superuser) profileRole = "Administrator";
+      hasAdminAccess = Boolean(u.is_superuser);
+      isOfficialProfile = u.role === "official";
+      if (hasAdminAccess && isOfficialProfile) profileRole = "Official (Admin)";
+      else if (hasAdminAccess) profileRole = "Administrator";
       else if (u.role) profileRole = String(u.role);
       if (u.avatar_url || u.photo_url) avatarUrl = u.avatar_url || u.photo_url;
     } catch {
@@ -310,27 +315,50 @@
   }
 
   // ── Sidebar menu items (with icons) per user type ──
-  $: menuItems = getMenuItems(userType);
+  $: menuItems = getMenuItems(userType, isOfficialProfile, hasAdminAccess);
 
-  function getMenuItems(type: string) {
+  function getMenuItems(type: string, officialProfile = false, adminAccess = false) {
     switch (type) {
-      case "admin":
-        return [
+      case "admin": {
+        const items = [
           {
             label: "Dashboard",
             href: "/dashboard/admin",
             icon: LayoutDashboard,
           },
           {
+            label: "User Management",
+            href: "/dashboard/admin/users",
+            icon: Users,
+          },
+          {
             label: "Chief Areas",
             href: "/dashboard/admin/chief-areas",
             icon: Map,
           },
-          { label: "Users", href: "/dashboard/admin/users", icon: Users },
+          {
+            label: "Citizen Review",
+            href: "/dashboard/admin/citizen-registrations",
+            icon: Users,
+          },
+          {
+            label: "National ID Review",
+            href: "/dashboard/admin/identity-verifications",
+            icon: Shield,
+          },
           { label: "Account", href: "/profile", icon: Shield },
         ];
-      case "official":
-        return [
+        if (officialProfile) {
+          items.splice(1, 0, {
+            label: "Official Workspace",
+            href: "/dashboard/official",
+            icon: LayoutDashboard,
+          });
+        }
+        return items;
+      }
+      case "official": {
+        const items = [
           {
             label: "Dashboard",
             href: "/dashboard/official",
@@ -354,6 +382,15 @@
           { label: "Map View", href: "/map", icon: MapPinned },
           { label: "Account", href: "/profile", icon: Shield },
         ];
+        if (adminAccess) {
+          items.unshift({
+            label: "Admin Console",
+            href: "/dashboard/admin",
+            icon: Shield,
+          });
+        }
+        return items;
+      }
       case "chief":
         return [
           {

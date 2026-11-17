@@ -36,10 +36,15 @@
           localStorage.setItem("user", JSON.stringify(data.user || { phone }));
         }
 
+        if (data.user?.must_change_password) {
+          goto("/change-password");
+          return;
+        }
+
         // Redirect based on role
         const userRole = data.user?.role || "citizen";
         if (data.user && data.user.is_superuser) {
-          goto("/dashboard/official");
+          goto("/dashboard/admin");
         } else if (userRole === "chief") {
           goto("/dashboard/chief");
         } else if (userRole === "official") {

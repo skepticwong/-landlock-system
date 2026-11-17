@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { MapPin, Ruler, Calendar, Search, Filter, X } from 'lucide-svelte';
   import { fetchListings, listingImageUrl, registerListingInterest } from '$lib/api.js';
+  import { showToast } from '$lib/notify.js';
   import Navbar from '$lib/components/Navbar.svelte';
 
   let listings: any[] = [];
@@ -17,16 +18,6 @@
 
   // Modal
   let selectedListing: any = null;
-  let toast: { type: 'success' | 'error'; message: string } | null = null;
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function showToast(type: 'success' | 'error', message: string) {
-    toast = { type, message };
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      toast = null;
-    }, 4000);
-  }
 
   onMount(async () => {
     // Check if user is logged in for the Navbar
@@ -126,14 +117,6 @@
     }
   }
 </script>
-
-{#if toast}
-  <div class="system-toast {toast.type}" role="status" aria-live="polite">
-    <div class="toast-icon">{toast.type === 'success' ? '✓' : '!'}</div>
-    <span>{toast.message}</span>
-    <button class="toast-close" aria-label="Dismiss notification" on:click={() => toast = null}>×</button>
-  </div>
-{/if}
 
 <svelte:head>
   <title>Marketplace — LandLock</title>
@@ -354,55 +337,6 @@
   .marketplace-page {
     min-height: 100vh;
     padding-bottom: 4rem;
-  }
-
-  .system-toast {
-    position: fixed;
-    top: 5rem;
-    right: 1.5rem;
-    z-index: 1000;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    max-width: min(420px, calc(100vw - 3rem));
-    padding: 0.875rem 1rem;
-    border-radius: 12px;
-    border: 1px solid #bbf7d0;
-    background: white;
-    color: #14532d;
-    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
-    font-size: 0.875rem;
-    font-weight: 600;
-  }
-
-  .system-toast.error {
-    border-color: #fecaca;
-    color: #991b1b;
-  }
-
-  .toast-icon {
-    width: 1.5rem;
-    height: 1.5rem;
-    flex: 0 0 1.5rem;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    background: #007A3D;
-    color: white;
-  }
-
-  .system-toast.error .toast-icon {
-    background: #dc2626;
-  }
-
-  .toast-close {
-    margin-left: auto;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font-size: 1.25rem;
-    line-height: 1;
   }
 
   .container {

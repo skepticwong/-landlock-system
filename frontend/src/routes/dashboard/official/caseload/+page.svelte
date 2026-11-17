@@ -15,6 +15,10 @@
     submittedDate: string;
     approved_by: string | null;
     approved_at: string | null;
+    authority_doc: string | null;
+    authority_doc_name: string | null;
+    authority_verified: boolean;
+    reviewed: boolean;
     points: any[];
   }
 
@@ -124,37 +128,40 @@
     return { 'Authorization': `Bearer ${localStorage.getItem('token')}` };
   }
 
-  onMount(async () => {
-    if (!browser) return;
+  onMount(() => {
+    if (!browser) return undefined;
 
     if (!localStorage.getItem('token')) {
       goto('/login');
-      return;
+      return undefined;
     }
 
-    try {
-      const res = await fetch(`${API}/api/user/me`, { headers: authHeaders() });
-      if (res.ok) {
-        const u = await res.json();
-        if (!u.is_superuser && !u.is_staff) {
-          goto('/dashboard');
+    const verify = async () => {
+      try {
+        const res = await fetch(`${API}/api/user/me`, { headers: authHeaders() });
+        if (res.ok) {
+          const u = await res.json();
+          if (!u.is_superuser && !u.is_staff) {
+            goto('/dashboard');
+            return;
+          }
+        } else {
+          goto('/login');
           return;
         }
-      } else {
+      } catch (err) {
+        console.error('Error verifying admin status:', err);
         goto('/login');
         return;
       }
-    } catch (err) {
-      console.error('Error verifying admin status:', err);
-      goto('/login');
-      return;
-    }
 
-    loadClaims();
-    isOnline = navigator.onLine;
+      loadClaims();
+      isOnline = navigator.onLine;
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+    };
+    verify();
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -235,24 +242,22 @@
                 {#if claim.status === 'pending'}
                   <div class="claim-actions">
                     <button
-                      class="action-btn approve-btn"
-                      on:click={() => approvePlot(claim.id)}
+                      class="action-btn view-btn"
+                      onclick={() => viewClaim(claim.id)}
                       disabled={!isOnline}
                     >
-                      <span class="btn-flex"><Check size={14} style="margin-right: 0.25rem;" /> Approve</span>
+                      <span class="btn-flex"><Eye size={14} style="margin-right: 0.25rem;" /> {claim.reviewed ? 'Review again' : 'Review claim'}</span>
                     </button>
-                    <button
-                      class="action-btn reject-btn"
-                      on:click={() => rejectPlot(claim.id)}
-                      disabled={!isOnline}
-                    >
-                      <span class="btn-flex"><X size={14} style="margin-right: 0.25rem;" /> Reject</span>
-                    </button>
+                    {#if claim.reviewed}
+                      <span class="reviewed-tag">Reviewed</span>
+                    {:else}
+                      <span class="review-hint">Approving requires review</span>
+                    {/if}
                   </div>
                 {:else}
                   <button
                     class="action-btn view-btn"
-                    on:click={() => viewClaim(claim.id)}
+                    onclick={() => viewClaim(claim.id)}
                     disabled={!isOnline}
                   >
                     <span class="btn-flex"><Eye size={14} style="margin-right: 0.25rem;" /> View</span>
@@ -526,6 +531,21 @@
 
   .reject-btn:hover:not(:disabled) {
     background: #dc2626;
+  }
+
+  .review-hint {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    font-style: italic;
+  }
+
+  .reviewed-tag {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #007A3D;
+    background: rgba(0, 122, 61, 0.1);
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
   }
 
   .loading-state {

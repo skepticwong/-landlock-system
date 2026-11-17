@@ -5,6 +5,7 @@
   import { MessageSquare, DollarSign, FileText, MapPin, Ruler, Check, Handshake, Home, Clock, User, Calendar as CalendarIcon, Trash2, Eye, Phone, Mail } from 'lucide-svelte';
   import { fetchTransactions, fetchMyListings, deleteListing, listingImageUrl, fetchBuyerInterests, approveBuyerInterest, rejectBuyerInterest, fetchMyInterests } from '$lib/api.js';
   import Navbar from '$lib/components/Navbar.svelte';
+  import { showToast, confirmDialog } from '$lib/notify.js';
 
   // Data from database
   let myListings: any[] = [];
@@ -93,13 +94,14 @@
   });
 
   async function handleRemoveListing(id: number) {
-    if (!confirm('Remove this listing from the marketplace?')) return;
+    if (!(await confirmDialog('Remove this listing from the marketplace?', { title: 'Remove listing', confirmText: 'Remove', danger: true }))) return;
     removingId = id;
     try {
       await deleteListing(id);
       myListings = myListings.filter((l: any) => l.id !== id);
+      showToast('success', 'Listing removed from the marketplace.');
     } catch (e: any) {
-      alert(e.message);
+      showToast('error', e.message);
     } finally {
       removingId = null;
     }
@@ -112,17 +114,18 @@
         i.id === id ? { ...i, status: 'contact_shared' } : i
       );
     } catch (e: any) {
-      alert(e.message);
+      showToast('error', e.message);
     }
   }
 
   async function handleRejectBuyerInterest(id: number) {
-    if (!confirm('Reject this buyer interest?')) return;
+    if (!(await confirmDialog('Reject this buyer interest?', { title: 'Reject interest', confirmText: 'Reject', danger: true }))) return;
     try {
       await rejectBuyerInterest(id);
       interestedBuyers = interestedBuyers.filter((i: any) => i.id !== id);
+      showToast('success', 'Buyer interest rejected.');
     } catch (e: any) {
-      alert(e.message);
+      showToast('error', e.message);
     }
   }
 
@@ -606,7 +609,7 @@
                         <button class="btn btn-secondary btn-sm" on:click={() => {
                           const token = localStorage.getItem('token');
                           if (!token) {
-                            alert('Please log in to access the chat');
+                            showToast('error', 'Please log in to access the chat');
                             goto('/login');
                           } else {
                             goto(`/chat/${interest.id}`);
@@ -703,7 +706,7 @@
                       <button class="btn btn-primary" on:click={() => {
                         const token = localStorage.getItem('token');
                         if (!token) {
-                          alert('Please log in to access the chat');
+                          showToast('error', 'Please log in to access the chat');
                           goto('/login');
                         } else {
                           goto(`/chat/${interest.id}`);

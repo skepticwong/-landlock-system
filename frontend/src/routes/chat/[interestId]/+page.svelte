@@ -6,6 +6,7 @@
   import { fetchMessages, sendMessage, fetchMyInterests } from '$lib/api.js';
   import Navbar from '$lib/components/Navbar.svelte';
   import PaymentModal from '$lib/components/PaymentModal.svelte';
+  import { showToast } from '$lib/notify.js';
 
   let interestId: number;
   let messages: any[] = [];
@@ -144,7 +145,7 @@
       newMessage = '';
       await loadMessages();
     } catch (e: any) {
-      alert(e.message || 'Failed to send message');
+      showToast('error', e.message || 'Failed to send message');
     }
   }
 

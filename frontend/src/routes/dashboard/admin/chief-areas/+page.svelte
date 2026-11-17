@@ -5,6 +5,7 @@
   import { MapPin, Plus, Edit, Trash2, Save, X, User, Layers } from 'lucide-svelte';
   import Navbar from '$lib/components/Navbar.svelte';
   import { initMap, addPolygon } from '$lib/map.js';
+  import { showToast, confirmDialog } from '$lib/notify.js';
 
   let currentUser = null;
   let chiefAreas = [];
@@ -194,7 +195,7 @@
 
   async function createChiefArea() {
     if (!formData.chief_id || !formData.area_type || !formData.area_id) {
-      alert('Please fill in all fields');
+      showToast('error', 'Please fill in all fields');
       return;
     }
 
@@ -215,18 +216,18 @@
       });
 
       if (response.ok) {
-        alert('Chief area created successfully');
+        showToast('success', 'Chief area created successfully');
         closeCreateModal();
         fetchChiefAreas();
         // Refresh map to show new assignment
         setTimeout(() => initializeMap(), 500);
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to create chief area');
+        showToast('error', error.error || 'Failed to create chief area');
       }
     } catch (error) {
       console.error('Failed to create chief area:', error);
-      alert('Failed to create chief area');
+      showToast('error', 'Failed to create chief area');
     } finally {
       isSubmitting = false;
     }
@@ -234,7 +235,7 @@
 
   async function updateChiefArea() {
     if (!formData.chief_id || !formData.area_type || !formData.area_id) {
-      alert('Please fill in all fields');
+      showToast('error', 'Please fill in all fields');
       return;
     }
 
@@ -255,25 +256,25 @@
       });
 
       if (response.ok) {
-        alert('Chief area updated successfully');
+        showToast('success', 'Chief area updated successfully');
         closeEditModal();
         fetchChiefAreas();
         // Refresh map to show updated assignment
         setTimeout(() => initializeMap(), 500);
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to update chief area');
+        showToast('error', error.error || 'Failed to update chief area');
       }
     } catch (error) {
       console.error('Failed to update chief area:', error);
-      alert('Failed to update chief area');
+      showToast('error', 'Failed to update chief area');
     } finally {
       isSubmitting = false;
     }
   }
 
   async function deleteChiefArea(areaId) {
-    if (!confirm('Are you sure you want to delete this chief area?')) {
+    if (!(await confirmDialog('Are you sure you want to delete this chief area?', { title: 'Delete chief area', confirmText: 'Delete', danger: true }))) {
       return;
     }
 
@@ -285,14 +286,14 @@
       });
 
       if (response.ok) {
-        alert('Chief area deleted successfully');
+        showToast('success', 'Chief area deleted successfully');
         fetchChiefAreas();
       } else {
-        alert('Failed to delete chief area');
+        showToast('error', 'Failed to delete chief area');
       }
     } catch (error) {
       console.error('Failed to delete chief area:', error);
-      alert('Failed to delete chief area');
+      showToast('error', 'Failed to delete chief area');
     }
   }
 
