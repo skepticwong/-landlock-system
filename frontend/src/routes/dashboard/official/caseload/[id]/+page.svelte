@@ -16,6 +16,7 @@
     Ruler,
   } from "lucide-svelte";
   import Navbar from "$lib/components/Navbar.svelte";
+  import { showToast, confirmDialog } from "$lib/notify";
 
   const API = "http://localhost:5000";
   let claim: any = null;
@@ -74,7 +75,11 @@
   }
 
   async function decide(action: "approve" | "reject") {
-    if (!confirm(`Are you sure you want to ${action} this claim?`)) return;
+    if (!(await confirmDialog(`Are you sure you want to ${action} this claim?`, {
+      title: action === "approve" ? "Approve claim" : "Reject claim",
+      confirmText: action === "approve" ? "Approve" : "Reject",
+      danger: action === "reject",
+    }))) return;
 
     try {
       const response = await fetch(
@@ -87,16 +92,17 @@
       );
 
       if (response.ok) {
-        alert(
+        showToast(
+          "success",
           `Claim ${action === "approve" ? "approved" : "rejected"} successfully`,
         );
         await fetchClaimDetails();
       } else {
-        alert(`Failed to ${action} claim`);
+        showToast("error", `Failed to ${action} claim`);
       }
     } catch (err) {
       console.error(`Error ${action} claim:`, err);
-      alert(`Failed to ${action} claim`);
+      showToast("error", `Failed to ${action} claim`);
     }
   }
 
@@ -135,6 +141,25 @@
       : `${API}/uploads/${path}`;
   }
 
+  async function setAuthorityVerified(verified: boolean) {
+    try {
+      const res = await fetch(
+        `${API}/api/official/caseload/${claim.id}/verify-authority`,
+        {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ verified }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update verification");
+      claim = { ...claim, authority_verified: verified };
+    } catch (err) {
+      console.error("Authority verification failed:", err);
+      showToast(err instanceof Error ? err.message : "Failed to update verification");
+    }
+  }
+
   onMount(() => {
     if (!browser) return undefined;
     if (!localStorage.getItem("token")) {
@@ -161,7 +186,7 @@
 />
 
 <main class="main-content">
-  <button class="back-button" on:click={goBack}>
+  <button class="back-button" onclick={goBack}>
     <ArrowLeft size={20} />
     <span>Back to Caseload</span>
   </button>
@@ -190,12 +215,19 @@
 
         {#if claim.status === "pending"}
           <div class="actions-section">
-            <button class="btn btn-approve" on:click={approveClaim}>
-              <Check size={18} /><span>Approve Claim</span>
-            </button>
-            <button class="btn btn-reject" on:click={rejectClaim}>
-              <X size={18} /><span>Reject Claim</span>
-            </button>
+            {#if claim.reviewed}
+              <button class="btn btn-approve" onclick={approveClaim}>
+                <Check size={18} /><span>Approve Claim</span>
+              </button>
+              <button class="btn btn-reject" onclick={rejectClaim}>
+                <X size={18} /><span>Reject Claim</span>
+              </button>
+            {:else}
+              <p class="review-required">
+                Review the documents, boundary map and claim details below, then
+                approve or reject. Decisions cannot be made without opening the claim.
+              </p>
+            {/if}
           </div>
         {/if}
       </div>
@@ -261,6 +293,16 @@
             <dd>{claim.traditional_authority || "Not recorded"}</dd>
             <dt>Village</dt>
             <dd>{claim.village || claim.location || "Not recorded"}</dd>
+            <dt>Land authority</dt>
+            <dd>
+              {#if (claim.land_authority || "chief") === "city"}
+                <span class="authority-badge city">City / Town Assembly</span>
+                <small class="authority-note">Annual land tax payable via the system</small>
+              {:else}
+                <span class="authority-badge chief">Chief / Traditional Authority</span>
+                <small class="authority-note">5% chief fee applies on sale</small>
+              {/if}
+            </dd>
             <dt>Land use</dt>
             <dd>{claim.land_use || "Not recorded"}</dd>
           </dl>
@@ -285,6 +327,26 @@
           <div>
             <dt>Map boundary</dt>
             <dd>{claim.has_map_boundary ? "Provided" : "Not provided"}</dd>
+          </div>
+          <div>
+            <dt>Authority document</dt>
+            <dd>
+              {#if claim.authority_doc_name}
+                {claim.authority_doc_name}
+                {#if claim.authority_doc}
+                  <a class="doc-link" href={mediaUrl(claim.authority_doc)} target="_blank" rel="noopener">View document</a>
+                {/if}
+                {#if claim.authority_verified}
+                  <span class="badge verified">Verified</span>
+                  <button class="verify-btn" onclick={() => setAuthorityVerified(false)}>Undo</button>
+                {:else}
+                  <span class="badge unverified">Awaiting verification</span>
+                  <button class="verify-btn" onclick={() => setAuthorityVerified(true)}>Mark verified</button>
+                {/if}
+              {:else}
+                Not provided
+              {/if}
+            </dd>
           </div>
           <div>
             <dt>Submitted</dt>
@@ -598,6 +660,59 @@
 
   .empty {
     color: #64748b;
+  }
+
+  .authority-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-right: 0.4rem;
+  }
+  .authority-badge.chief { background: rgba(0, 122, 61, 0.12); color: #007A3D; }
+  .authority-badge.city { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
+  .authority-note { display: block; color: #64748b; margin-top: 0.15rem; }
+
+  .badge {
+    display: inline-block;
+    margin-left: 0.4rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+  }
+  .badge.verified { background: rgba(5, 150, 105, 0.12); color: #059669; }
+  .badge.unverified { background: rgba(217, 119, 6, 0.12); color: #d97706; }
+
+  .verify-btn {
+    margin-left: 0.4rem;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: white;
+    color: #334155;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .verify-btn:hover { background: #f1f5f9; }
+
+  .review-required {
+    font-size: 0.85rem;
+    color: #92400e;
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+    margin: 0;
+  }
+
+  .doc-link {
+    margin-left: 0.4rem;
+    color: #2563eb;
+    font-size: 0.8rem;
+    font-weight: 600;
   }
 
   @media (max-width: 768px) {

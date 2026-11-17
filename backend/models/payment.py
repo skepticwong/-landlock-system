@@ -126,6 +126,10 @@ FEE_STRUCTURE = {
     'certificate_issuance': {
         'amount': 3000,  # MWK
         'description': 'Land Certificate Issuance Fee'
+    },
+    'land_tax': {
+        'amount': 15000,  # MWK, annual — city/town-controlled plots only
+        'description': 'Annual Land Tax (City/Town Plots)'
     }
 }
 

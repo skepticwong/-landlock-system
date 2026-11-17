@@ -12,9 +12,13 @@ class User:
         self.full_name = kwargs.get('full_name')
         self.phone = kwargs.get('phone')
         self.is_active = kwargs.get('is_active', True)
-        self.is_superuser = kwargs.get('is_superuser', False)
         self.role = kwargs.get('role', 'citizen')
+        admin_access = kwargs.get('admin_access')
+        if admin_access is None:
+            admin_access = bool(kwargs.get('is_superuser', False)) and self.role != 'official'
+        self.is_superuser = bool(admin_access)
         self.identity_status = kwargs.get('identity_status', 'unverified')
+        self.must_change_password = kwargs.get('must_change_password', False)
         self.created_at = kwargs.get('created_at', datetime.utcnow().isoformat())
         self.updated_at = kwargs.get('updated_at', datetime.utcnow().isoformat())
 
@@ -88,8 +92,10 @@ class User:
             "phone": self.phone,
             "is_active": self.is_active,
             "is_superuser": self.is_superuser,
+            "admin_access": self.is_superuser,
             "role": self.role,
             "identity_status": self.identity_status,
+            "must_change_password": self.must_change_password,
             "created_at": self.created_at,
             "updated_at": self.updated_at
         }

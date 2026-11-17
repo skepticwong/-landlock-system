@@ -147,7 +147,10 @@ def register_citizen(current_user):
         return jsonify({"error": "Only officials can register citizens"}), 403
 
     data = request.json or {}
-    required_fields = ['full_name', 'phone', 'temporary_pin']
+    required_fields = [
+        'full_name', 'phone', 'temporary_pin', 'district',
+        'traditional_authority', 'village'
+    ]
     if not all(k in data for k in required_fields):
         return jsonify({"error": "Missing required fields"}), 400
 
@@ -165,23 +168,36 @@ def register_citizen(current_user):
         "password_hash": get_password_hash(data['temporary_pin']),
         "full_name": data['full_name'],
         "role": "citizen",
-        "is_active": True,
+        "is_active": False,
         "is_superuser": False,
         "identity_status": "unverified",
         "created_at": datetime.now().isoformat(),
-        "updated_at": datetime.now().isoformat()
+        "updated_at": datetime.now().isoformat(),
+        "must_change_password": True
     }
 
-    user = db.insert("users", user_data)
+    registration_data = {
+        "district": data['district'],
+        "traditional_authority": data['traditional_authority'],
+        "village": data['village'],
+        "relationship_to_land": data.get('relationship_to_land', ''),
+        "additional_notes": data.get('additional_notes', ''),
+        "registered_by": current_user.id,
+        "status": "pending",
+        "submitted_at": datetime.now().isoformat()
+    }
+    user = db.create_citizen_registration(user_data, registration_data)
 
     if user:
         return jsonify({
-            "message": "Citizen registered successfully",
+            "message": "Citizen registration submitted for administrator review",
             "user": {
                 "id": user['id'],
                 "username": user['username'],
                 "phone": user['phone'],
-                "identity_status": user.get('identity_status', 'unverified')
+                "identity_status": user.get('identity_status', 'unverified'),
+                "registration_status": "pending",
+                "must_change_password": True
             }
         }), 201
     else:
@@ -234,6 +250,12 @@ def login():
     if not is_valid:
         return jsonify({"error": "Invalid phone number or password"}), 401
 
+    if not user.get('is_active', True):
+        registrations = db.select("citizen_registrations", eq={"user_id": user['id']})
+        if registrations and registrations[0].get('status') == "pending":
+            return jsonify({"error": "Your citizen registration is awaiting administrator approval"}), 403
+        return jsonify({"error": "This account is inactive"}), 403
+
     db.update("users", {
         "password_attempts": 0,
         "updated_at": datetime.now().isoformat()
@@ -254,7 +276,13 @@ def login():
             "phone": user['phone'],
             "full_name": user.get('full_name', ''),
             "role": user.get('role', 'citizen'),
-            "is_superuser": bool(user.get('is_superuser', False))
+            "is_superuser": (
+                bool(user.get('admin_access', False))
+                if 'admin_access' in user
+                else bool(user.get('is_superuser', False))
+                and str(user.get('role', '')).lower() != 'official'
+            ),
+            "must_change_password": bool(user.get('must_change_password', False))
         }
     })
 
@@ -521,6 +549,8 @@ def get_current_user(current_user):
         user_data.pop('hashed_password', None)
         # Ensure is_staff is exposed for frontend gating
         user_data['is_staff'] = current_user.is_official
+        user_data['is_superuser'] = current_user.is_superuser
+        user_data['admin_access'] = current_user.is_superuser
         if current_user.is_superuser:
             user_data["identity_status"] = "not_required"
         else:
@@ -751,6 +781,77 @@ def get_official_dashboard_stats(current_user):
         user_id = plot.get('user_id')
         plots_by_user[user_id] = plots_by_user.get(user_id, 0) + 1
     
+    # ── Extended KPIs ─────────────────────────────────────────────
+    import json
+    from datetime import datetime, timedelta
+    from utils.plot_protection import is_plot_protected
+
+    def _parse_dt(value):
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        except (ValueError, TypeError):
+            return None
+
+    # Caseload: unprotected citizen plots awaiting a decision
+    pending_claims = sum(
+        1 for p in all_plots
+        if p.get('status') == 'pending' and not is_plot_protected(p)
+    )
+
+    # Approval rate: decided plots that were approved
+    approved_count = sum(1 for p in all_plots if p.get('status') == 'approved')
+    rejected_count = sum(1 for p in all_plots if p.get('status') == 'rejected')
+    decided = approved_count + rejected_count
+    approval_rate = round((approved_count / decided) * 100) if decided else None
+
+    # Boundary-mapped share of plots
+    boundary_mapped = sum(
+        1 for p in all_plots
+        if p.get('has_map_boundary') or (
+            isinstance(p.get('points'), (list, str))
+            and (len(p['points']) if isinstance(p['points'], list) else len(p.get('points') or '')) > 2
+        )
+    )
+    boundary_mapped_pct = round((boundary_mapped / total_plots) * 100) if total_plots else 0
+
+    # Protected / state-held plots
+    protected_plots = sum(1 for p in all_plots if is_plot_protected(p))
+
+    # Claims with photo/video evidence attached
+    media_rows = db.select("plot_media")
+    plots_with_media = len({m.get('plot_id') for m in media_rows if m.get('plot_id')})
+
+    # Registration trend: this week vs previous week
+    now = datetime.now()
+    week_start = now - timedelta(days=7)
+    prev_week_start = now - timedelta(days=14)
+    this_week = sum(1 for p in all_plots if (_parse_dt(p.get('created_at')) or now) >= week_start)
+    prev_week = sum(
+        1 for p in all_plots
+        if prev_week_start <= (_parse_dt(p.get('created_at')) or now) < week_start
+    )
+
+    # Registrations by month (last 6 months) for the trend chart
+    registrations_by_month = []
+    for i in range(5, -1, -1):
+        month_start = (now.replace(day=1) - timedelta(days=30 * i)).replace(day=1)
+        next_month = (month_start + timedelta(days=32)).replace(day=1)
+        count = sum(
+            1 for p in all_plots
+            if month_start <= (_parse_dt(p.get('created_at')) or now) < next_month
+        )
+        registrations_by_month.append({
+            "month": month_start.strftime("%b"),
+            "count": count
+        })
+
+    # Chief coverage: assigned vs total chief areas
+    chief_areas = db.select("chief_areas")
+    chief_areas_total = len(chief_areas)
+    chief_areas_assigned = sum(1 for a in chief_areas if a.get('chief_id'))
+
     return jsonify({
         "total_plots": total_plots,
         "total_users": total_users,
@@ -758,7 +859,26 @@ def get_official_dashboard_stats(current_user):
         "plot_status": plot_status,
         "transaction_status": tx_status,
         "recent_activity": recent_activity,
-        "plots_by_user": plots_by_user
+        "plots_by_user": plots_by_user,
+        # Extended KPIs
+        "pending_claims": pending_claims,
+        "approval_rate": approval_rate,
+        "boundary_mapped_pct": boundary_mapped_pct,
+        "protected_plots": protected_plots,
+        "plots_with_media": plots_with_media,
+        "new_this_week": this_week,
+        "new_prev_week": prev_week,
+        "registrations_by_month": registrations_by_month,
+        "chief_areas_total": chief_areas_total,
+        "chief_areas_assigned": chief_areas_assigned,
+        # Authority split: chief-controlled (customary) vs city-controlled (leasehold)
+        "chief_controlled_plots": sum(1 for p in all_plots if (p.get('land_authority') or 'chief').lower() == 'chief'),
+        "city_controlled_plots": sum(1 for p in all_plots if (p.get('land_authority') or '').lower() == 'city'),
+        "chief_fees_collected": round(sum(float(t.get('chief_fee') or 0) for t in all_transactions), 2),
+        "land_tax_collected": round(sum(
+            float(p.get('amount') or 0) for p in db.select("payments")
+            if p.get('payment_type') == 'land_tax' and p.get('status') == 'completed'
+        ), 2)
     })
 
 # Official Caseload - Get all plots for officials to review
@@ -804,6 +924,10 @@ def get_official_caseload(current_user):
             "traditional_authority": plot.get('traditional_authority', ''),
             "land_use": plot.get('land_use', ''),
             "estimated_size": plot.get('estimated_size', ''),
+            "authority_doc": plot.get('authority_doc'),
+            "authority_doc_name": plot.get('authority_doc_name'),
+            "authority_verified": bool(plot.get('authority_verified')),
+            "reviewed": bool(plot.get('reviewed_at')),
             "points": json.loads(plot['points']) if isinstance(plot.get('points'), str) else plot.get('points', [])
         })
 
@@ -918,6 +1042,11 @@ def approve_plot(current_user, plot_id):
         return jsonify({"error": "State-held plots cannot be approved or rejected through the caseload. "
                                  "Use the official plot management endpoint."}), 403
 
+    # Review gate: never allow approval of a claim the official has not opened
+    if action == "approve" and not plot.get('reviewed_at'):
+        return jsonify({"error": "You must view the claim details (documents and boundary) "
+                                 "before approving it. Open the claim and review it first."}), 400
+
     # Update plot status and record who approved it
     update_data = {
         "status": action,
@@ -948,6 +1077,18 @@ def get_official_claim_details(current_user, plot_id):
 
     plot = plots[0]
 
+    # ── Review gate ──
+    # Opening the full claim details counts as reviewing it. Until this has
+    # happened, the approve endpoint will refuse to approve the claim.
+    if plot.get('status') == 'pending':
+        if not plot.get('reviewed_at'):
+            db.update("plots", {
+                "reviewed_by": current_user.id,
+                "reviewed_at": datetime.now().isoformat()
+            }, eq={"id": plot_id})
+            plot['reviewed_by'] = current_user.id
+            plot['reviewed_at'] = datetime.now().isoformat()
+
     import json
     if isinstance(plot.get('points'), str):
         try:
@@ -968,11 +1109,44 @@ def get_official_claim_details(current_user, plot_id):
 
     plot['media'] = db.select("plot_media", eq={"plot_id": plot_id}, order="created_at DESC")
 
+    plot['reviewed'] = bool(plot.get('reviewed_at'))
+    plot['authority_verified'] = bool(plot.get('authority_verified'))
+
     if plot.get('approved_by'):
         approver = db.select("users", eq={"id": plot.get('approved_by')})
         plot['approved_by_name'] = approver[0].get('full_name', 'Unknown') if approver else 'Unknown'
 
     return jsonify(plot)
+
+# Official Caseload - Verify the authority proof document
+@app.route("/api/official/caseload/<int:plot_id>/verify-authority", methods=["POST"])
+@token_required
+def verify_authority_doc(current_user, plot_id):
+    if not current_user.is_superuser and not current_user.is_official:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    plots = db.select("plots", eq={"id": plot_id})
+    if not plots:
+        return jsonify({"error": "Plot not found"}), 404
+    plot = plots[0]
+
+    if not plot.get("authority_doc_name"):
+        return jsonify({"error": "No authority document was submitted for this claim"}), 400
+
+    data = request.json or {}
+    verified = bool(data.get("verified", True))
+    result = db.update("plots", {
+        "authority_verified": 1 if verified else 0,
+        "authority_verified_by": current_user.id,
+        "authority_verified_at": datetime.now().isoformat()
+    }, eq={"id": plot_id})
+
+    if result:
+        return jsonify({
+            "message": f"Authority document {'verified' if verified else 'un-verified'}",
+            "authority_verified": verified
+        })
+    return jsonify({"error": "Failed to update plot"}), 500
 
 # Land Registration endpoint
 @app.route("/api/land-registration", methods=["POST"])
@@ -1009,6 +1183,12 @@ def land_registration(current_user):
         "acquisition_method": data.get('acquisition_method', ''),
         "estimated_size": data.get('estimated_size', ''),
         "has_map_boundary": data.get('has_map_boundary', False),
+        # Land authority: 'chief' = customary land (chief consent letter required),
+        # 'city' = city/town leasehold (lease or occupancy certificate + annual land tax)
+        "land_authority": data.get('land_authority') if data.get('land_authority') in ('chief', 'city') else 'chief',
+        "authority_doc": data.get('authority_doc_name', ''),
+        "authority_doc_name": data.get('authority_doc_name', ''),
+        "authority_doc_type": data.get('authority_doc_type', ''),
         "created_at": datetime.now().isoformat()
     }
 
@@ -1019,6 +1199,25 @@ def land_registration(current_user):
         import os
         media_directory = os.path.join(os.path.dirname(__file__), 'uploads', 'plots')
         os.makedirs(media_directory, exist_ok=True)
+
+        # ── Authority proof document (chief consent letter / city lease) ──
+        authority_doc = data.get('authority_doc_data') or {}
+        doc_url = authority_doc.get('data_url', '') if isinstance(authority_doc, dict) else ''
+        if ';base64,' in doc_url:
+            mime_type, encoded = doc_url.split(';base64,', 1)
+            extension = mime_type.split('/')[-1].lower()
+            extension = {'jpeg': 'jpg'}.get(extension, extension)
+            filename = f"{plot['id']}_authoritydoc_{datetime.now().strftime('%Y%m%d%H%M%S%f')}.{extension}"
+            file_path = os.path.join(media_directory, filename)
+            try:
+                with open(file_path, 'wb') as doc_file:
+                    doc_file.write(base64.b64decode(encoded))
+                db.update("plots", {
+                    "authority_doc": f"/uploads/plots/{filename}"
+                }, eq={"id": plot['id']})
+            except (ValueError, OSError):
+                pass
+
         for media in data.get('boundary_photos', []):
             data_url = media.get('data_url', '')
             if ';base64,' not in data_url:

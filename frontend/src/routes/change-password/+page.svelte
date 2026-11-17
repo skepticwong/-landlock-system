@@ -34,7 +34,19 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Password change failed.");
       success = "Password changed successfully.";
-      setTimeout(() => goto("/dashboard"), 800);
+      const profileResponse = await fetch("/api/user/me", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!profileResponse.ok) throw new Error("Password changed, but the account profile could not be loaded.");
+      const user = await profileResponse.json();
+      const destination = user.is_superuser
+        ? "/dashboard/admin"
+        : user.role === "chief"
+          ? "/dashboard/chief"
+          : user.role === "official"
+            ? "/dashboard/official"
+            : "/dashboard";
+      setTimeout(() => goto(destination), 800);
     } catch (err) {
       error = err instanceof Error ? err.message : "Password change failed.";
     } finally {

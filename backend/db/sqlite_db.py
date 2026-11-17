@@ -72,6 +72,31 @@ def init_db(retry_count=0):
         CREATE INDEX IF NOT EXISTS idx_identity_verifications_status
         ON identity_verifications(status, submitted_at)
         ''')
+
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS citizen_registrations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL UNIQUE,
+            district TEXT NOT NULL,
+            traditional_authority TEXT NOT NULL,
+            village TEXT NOT NULL,
+            relationship_to_land TEXT,
+            additional_notes TEXT,
+            registered_by INTEGER,
+            status TEXT NOT NULL DEFAULT 'pending',
+            submitted_at TEXT NOT NULL,
+            reviewed_at TEXT,
+            reviewed_by INTEGER,
+            review_reason TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (registered_by) REFERENCES users(id),
+            FOREIGN KEY (reviewed_by) REFERENCES users(id)
+        )
+        ''')
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_citizen_registrations_status
+        ON citizen_registrations(status, submitted_at)
+        ''')
         
         # Create Plots Table
         # For JSON arrays like points, we can store as TEXT and serialize/deserialize
@@ -119,6 +144,11 @@ def init_db(retry_count=0):
             cursor.execute("ALTER TABLE plots ADD COLUMN has_map_boundary BOOLEAN DEFAULT 0")
         if 'size_unit' not in columns:
             cursor.execute("ALTER TABLE plots ADD COLUMN size_unit TEXT DEFAULT 'meters'")
+        # Proof document for the declared land authority (chief consent letter / city lease)
+        if 'authority_doc_name' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN authority_doc_name TEXT")
+        if 'authority_doc_type' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN authority_doc_type TEXT")
         if 'area' not in columns:
             cursor.execute("ALTER TABLE plots ADD COLUMN area REAL")
         if 'location' not in columns:
@@ -134,6 +164,25 @@ def init_db(retry_count=0):
             cursor.execute("ALTER TABLE plots ADD COLUMN is_protected BOOLEAN DEFAULT 0")
         if 'created_by_official' not in columns:
             cursor.execute("ALTER TABLE plots ADD COLUMN created_by_official INTEGER")
+        # Land authority: 'chief' (customary land controlled by a traditional authority)
+        # or 'city' (leasehold on city/town land, subject to land tax)
+        if 'land_authority' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN land_authority TEXT DEFAULT 'chief'")
+        if 'authority_doc' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN authority_doc TEXT")  # proof: chief consent letter / city lease
+        if 'authority_verified' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN authority_verified BOOLEAN DEFAULT 0")
+        if 'authority_verified_by' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN authority_verified_by INTEGER")
+        if 'authority_verified_at' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN authority_verified_at TEXT")
+        # Review gate: officials must open (review) a claim before they can approve it
+        if 'reviewed_by' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN reviewed_by INTEGER")
+        if 'reviewed_at' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN reviewed_at TEXT")
+        if 'land_tax_paid_until' not in columns:
+            cursor.execute("ALTER TABLE plots ADD COLUMN land_tax_paid_until TEXT")  # ISO date, city plots only
 
         # Create Transactions Table
         cursor.execute('''
@@ -222,6 +271,20 @@ def init_db(retry_count=0):
         columns = [column[1] for column in cursor.fetchall()]
         if 'role' not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'citizen'")
+        if 'admin_access' not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN admin_access BOOLEAN NOT NULL DEFAULT 0")
+            cursor.execute("""
+                UPDATE users
+                SET admin_access = CASE
+                    WHEN role = 'admin'
+                         OR (
+                             COALESCE(is_superuser, 0) = 1
+                             AND COALESCE(role, '') != 'official'
+                         )
+                    THEN 1
+                    ELSE 0
+                END
+            """)
 
         # Add multi-party approval columns to transactions
         cursor.execute("PRAGMA table_info(transactions)")
@@ -246,6 +309,11 @@ def init_db(retry_count=0):
             cursor.execute("ALTER TABLE transactions ADD COLUMN chief_approval_status TEXT DEFAULT 'pending'")
         if 'chief_approved_at' not in tx_columns:
             cursor.execute("ALTER TABLE transactions ADD COLUMN chief_approved_at TEXT")
+        # 5% chief fee on sales of chief-controlled (customary) plots
+        if 'chief_fee' not in tx_columns:
+            cursor.execute("ALTER TABLE transactions ADD COLUMN chief_fee REAL DEFAULT 0")
+        if 'land_authority' not in tx_columns:
+            cursor.execute("ALTER TABLE transactions ADD COLUMN land_authority TEXT")
         if 'buyer_approval_status' not in tx_columns:
             cursor.execute("ALTER TABLE transactions ADD COLUMN buyer_approval_status TEXT DEFAULT 'pending'")
         if 'buyer_approved_at' not in tx_columns:
@@ -514,5 +582,77 @@ class SQLiteClient:
         conn.commit()
         conn.close()
         return True
+
+    def create_citizen_registration(self, user_data, registration_data):
+        conn = get_db_connection()
+        conn.row_factory = self._dict_factory
+        cursor = conn.cursor()
+        try:
+            cursor.execute("BEGIN")
+            columns = ", ".join(user_data.keys())
+            placeholders = ", ".join(["?"] * len(user_data))
+            cursor.execute(
+                f"INSERT INTO users ({columns}) VALUES ({placeholders})",
+                tuple(user_data.values()),
+            )
+            user_id = cursor.lastrowid
+            registration_data = {**registration_data, "user_id": user_id}
+            columns = ", ".join(registration_data.keys())
+            placeholders = ", ".join(["?"] * len(registration_data))
+            cursor.execute(
+                f"INSERT INTO citizen_registrations ({columns}) VALUES ({placeholders})",
+                tuple(registration_data.values()),
+            )
+            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            user = cursor.fetchone()
+            conn.commit()
+            return user
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def review_citizen_registration(self, registration_id, decision, reason, reviewer_id, reviewed_at):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("BEGIN IMMEDIATE")
+            cursor.execute(
+                "SELECT user_id FROM citizen_registrations WHERE id = ? AND status = 'pending'",
+                (registration_id,),
+            )
+            registration = cursor.fetchone()
+            if not registration:
+                conn.rollback()
+                return False
+
+            user_id = registration[0]
+            cursor.execute(
+                '''
+                UPDATE citizen_registrations
+                SET status = ?, review_reason = ?, reviewed_by = ?, reviewed_at = ?
+                WHERE id = ? AND status = 'pending'
+                ''',
+                (decision, reason or None, reviewer_id, reviewed_at, registration_id),
+            )
+            if cursor.rowcount != 1:
+                conn.rollback()
+                return False
+
+            cursor.execute(
+                "UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?",
+                (1 if decision == "approved" else 0, reviewed_at, user_id),
+            )
+            if cursor.rowcount != 1:
+                raise sqlite3.DatabaseError("Citizen account could not be updated during review.")
+
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
 db = SQLiteClient()

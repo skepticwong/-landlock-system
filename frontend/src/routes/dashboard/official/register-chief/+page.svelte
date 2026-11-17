@@ -5,6 +5,7 @@
   import { UserPlus, User, MapPin, Shield, ArrowLeft, Save, Trash2, Layers } from 'lucide-svelte';
   import Navbar from '$lib/components/Navbar.svelte';
   import { initMap, addPolygon } from '$lib/map.js';
+  import { confirmDialog, promptDialog, showToast } from '$lib/notify';
 
   const API = 'http://localhost:5000';
 
@@ -196,7 +197,7 @@
   }
 
   async function deleteArea(areaId: number) {
-    if (!confirm('Are you sure you want to remove this area assignment?')) return;
+    if (!(await confirmDialog('Are you sure you want to remove this area assignment?', { title: 'Remove area assignment', confirmText: 'Remove', danger: true }))) return;
     
     try {
       const response = await fetch(`${API}/api/official/chief-areas/${areaId}`, {
@@ -221,12 +222,11 @@
   }
 
   async function resetChiefPin(chiefId: number, chiefName: string) {
-    const newPin = prompt(`Enter new PIN for ${chiefName}:`);
+    const newPin = await promptDialog(`Enter new PIN for ${chiefName}:`, { title: 'Reset chief PIN', confirmText: 'Reset PIN', placeholder: 'At least 4 characters' });
     if (!newPin) return;
     
     if (newPin.length < 4) {
-      message = 'PIN must be at least 4 characters';
-      messageType = 'error';
+      showToast('error', 'PIN must be at least 4 characters');
       return;
     }
     

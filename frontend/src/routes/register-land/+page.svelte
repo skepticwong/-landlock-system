@@ -5,6 +5,7 @@
   import { Shield, FileText, DollarSign, RefreshCw, MapPin, Paperclip, Check, User, ClipboardList } from 'lucide-svelte';
   import Navbar from '$lib/components/Navbar.svelte';
   import { calculatePolygonArea, formatArea, detectDistrict, loadDistrictBoundaries } from '$lib/geo';
+  import { showToast } from '$lib/notify';
 
   // Step management
   let currentStep = 1;
@@ -85,7 +86,7 @@
 
   function confirmBoundary() {
     if (mapPoints.length < 3) {
-      alert('Please plot at least 3 boundary points on the map to define the boundary.');
+      showToast('error', 'Please plot at least 3 boundary points on the map to define the boundary.');
       return;
     }
 
@@ -105,6 +106,7 @@
     village: '',
     landmarkDescription: '',
     boundaryPhotos: [] as File[],
+    landAuthority: 'chief' as 'chief' | 'city',
     witnesses: [''],
     hasMapBoundary: false,
     mapBoundary: null as any,
@@ -124,7 +126,7 @@
   let isSubmitting = false;
   let submissionStatus: 'idle' | 'success' | 'offline' = 'idle';
   let tempId = '';
-  let currentUser = null;
+  let currentUser: any = null;
 
   // Districts and authorities (real data from backend)
   let districts = ['Lilongwe', 'Blantyre', 'Mzuzu', 'Zomba', 'Kasungu', 'Mangochi', 'Salima', 'Dedza', 'Ntcheu', 'Mwanza'];
@@ -223,6 +225,13 @@
     }
   }
 
+  let authorityDocFile: File | null = null;
+
+  function handleAuthorityDoc(event: Event) {
+    const input = event.target as HTMLInputElement;
+    authorityDocFile = input.files?.[0] ?? null;
+  }
+
   async function submitRegistration() {
     isSubmitting = true;
 
@@ -231,8 +240,17 @@
       
       // Check if user is logged in
       if (!token) {
-        alert('You must be logged in to submit a land registration. Please log in and try again.');
+        showToast('error', 'You must be logged in to submit a land registration. Please log in and try again.');
         goto('/login');
+        return;
+      }
+
+      // Proof document is mandatory whichever authority controls the land
+      if (!authorityDocFile) {
+        isSubmitting = false;
+        showToast('error', formData.landAuthority === 'city'
+          ? 'Please attach the lease or occupancy certificate proving the land is under the City/Town Assembly.'
+          : "Please attach the chief's consent letter proving the land is under the Traditional Authority.");
         return;
       }
 
@@ -247,7 +265,10 @@
         estimated_size: formData.estimatedSize,
         size_unit: formData.sizeUnit,
         has_map_boundary: formData.hasMapBoundary,
-        map_boundary: formData.mapBoundary
+        map_boundary: formData.mapBoundary,
+        land_authority: formData.landAuthority,
+        authority_doc_name: authorityDocFile.name,
+        authority_doc_type: authorityDocFile.type || 'application/octet-stream'
       };
 
       const boundaryPhotos = await Promise.all(
@@ -258,6 +279,15 @@
         }))
       );
       Object.assign(payload, { boundary_photos: boundaryPhotos });
+
+      // Attach the actual proof document as base64 so officials can view it
+      const docFile: File = authorityDocFile;
+      const authorityDocData = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: docFile.name, data_url: reader.result });
+        reader.readAsDataURL(docFile);
+      });
+      Object.assign(payload, { authority_doc_data: authorityDocData });
 
       if (isOnline) {
         const response = await fetch('http://localhost:5000/api/land-registration', {
@@ -273,7 +303,7 @@
           // Token expired or invalid - clear and redirect to login
           localStorage.removeItem('token');
           localStorage.removeItem('user');
-          alert('Your session has expired. Please log in again.');
+          showToast('error', 'Your session has expired. Please log in again.');
           goto('/login');
           return;
         }
@@ -298,7 +328,7 @@
       currentStep = 5; // Go to confirmation step
     } catch (error) {
       console.error('Submission failed:', error);
-      alert('Failed to submit registration. Please try again.');
+      showToast('error', 'Failed to submit registration. Please try again.');
     } finally {
       isSubmitting = false;
     }
@@ -341,8 +371,8 @@
       3: 'Land Details',
       4: 'Review & Submit',
       5: 'Confirmation'
-    };
-    return titles[step] || '';
+    }
+    return (titles as Record<number, string>)[step] || '';
   }
 
   function getStepSubtitle(step: number): string {
@@ -353,7 +383,7 @@
       4: 'Review your information before submitting.',
       5: 'Your land claim has been created successfully.'
     };
-    return subtitles[step] || '';
+    return (subtitles as Record<number, string>)[step] || '';
   }
 </script>
 
@@ -377,7 +407,7 @@
             class="progress-step" 
             class:active={currentStep === i + 1}
             class:completed={currentStep > i + 1}
-            on:click={() => goToStep(i + 1)}
+            onclick={() => goToStep(i + 1)}
             style="cursor: pointer;"
           >
             <div class="step-number">{i + 1}</div>
@@ -427,7 +457,7 @@
             </div>
 
             <div class="step-actions">
-              <button class="btn btn-primary btn-lg" on:click={() => currentStep = 2}>
+              <button class="btn btn-primary btn-lg" onclick={() => currentStep = 2}>
                 Continue
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                   <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
@@ -489,6 +519,40 @@
               </div>
 
               <div class="form-group">
+                <label class="form-label">Land Authority</label>
+                <div class="authority-choice">
+                  <label class:active={formData.landAuthority === 'chief'}>
+                    <input type="radio" bind:group={formData.landAuthority} value="chief" />
+                    <strong>Chief / Traditional Authority</strong>
+                    <small>Customary land. Requires a chief's consent letter. A 5% chief fee applies when the land is sold.</small>
+                  </label>
+                  <label class:active={formData.landAuthority === 'city'}>
+                    <input type="radio" bind:group={formData.landAuthority} value="city" />
+                    <strong>City / Town Assembly</strong>
+                    <small>Leasehold urban land. Requires a lease or occupancy certificate. Annual land tax is payable via the system.</small>
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">
+                  {formData.landAuthority === 'city' ? 'Lease / Occupancy Certificate' : "Chief's Consent Letter"}
+                </label>
+                <div class="file-upload">
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onchange={handleAuthorityDoc}
+                  />
+                  {#if authorityDocFile}
+                    <span class="file-name">{authorityDocFile.name}</span>
+                  {:else}
+                    <span class="file-hint">Required proof that the land falls under the selected authority</span>
+                  {/if}
+                </div>
+              </div>
+
+              <div class="form-group">
                 <label class="form-label">Photos</label>
                 <div class="file-upload">
                   <input 
@@ -496,7 +560,7 @@
                     id="boundary-photos" 
                     multiple 
                     accept="image/*,video/*"
-                    on:change={handlePhotoUpload}
+                    onchange={handlePhotoUpload}
                     class="file-input"
                   />
                   <label for="boundary-photos" class="file-label">
@@ -532,7 +596,7 @@
                         <button 
                           type="button" 
                           class="btn btn-icon btn-danger"
-                          on:click={() => removeWitness(index)}
+                          onclick={() => removeWitness(index)}
                         >
                           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                             <path d="M2 4h12M4 4v8a2 2 0 002 2h4a2 2 0 002-2V4M6 4V2a1 1 0 011-1h2a1 1 0 011 1v2"/>
@@ -541,7 +605,7 @@
                       {/if}
                     </div>
                   {/each}
-                  <button type="button" class="btn btn-secondary btn-sm" on:click={addWitness}>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick={addWitness}>
                     + Add another witness
                   </button>
                 </div>
@@ -555,7 +619,7 @@
                 <h3><MapPin class="w-5 h-5 inline" /> Draw Boundary on Map (Optional)</h3>
                 <p class="section-description">Click on the map to mark the corners of your land boundary.</p>
                 
-                <button type="button" class="btn btn-outline" on:click={toggleMapSection}>
+                <button type="button" class="btn btn-outline" onclick={toggleMapSection}>
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
                   </svg>
@@ -580,8 +644,8 @@
                     </div>
                   {/if}
                   <div style="margin-top: 1rem; display: flex; gap: 1rem;">
-                    <button class="btn btn-secondary btn-sm" type="button" on:click={clearMapPoints}>Clear Points</button>
-                    <button class="btn btn-primary btn-sm" type="button" on:click={confirmBoundary}>Save Map Boundary</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick={clearMapPoints}>Clear Points</button>
+                    <button class="btn btn-primary btn-sm" type="button" onclick={confirmBoundary}>Save Map Boundary</button>
                   </div>
                 {/if}
                 
@@ -603,7 +667,7 @@
           </div>
 
           <div class="step-actions">
-            <button class="btn btn-secondary" on:click={prevStep}>
+            <button class="btn btn-secondary" onclick={prevStep}>
               <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
               </svg>
@@ -611,7 +675,7 @@
             </button>
             <button 
               class="btn btn-primary" 
-              on:click={() => currentStep = 3}
+              onclick={() => currentStep = 3}
             >
               Continue to Land Details
               <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
@@ -685,7 +749,7 @@
           </div>
 
           <div class="step-actions">
-            <button class="btn btn-secondary" on:click={prevStep}>
+            <button class="btn btn-secondary" onclick={prevStep}>
               <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
               </svg>
@@ -693,7 +757,7 @@
             </button>
             <button 
               class="btn btn-primary" 
-              on:click={() => currentStep = 4}
+              onclick={() => currentStep = 4}
               >
               Review & Submit
               <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
@@ -760,7 +824,7 @@
           </div>
 
           <div class="step-actions">
-            <button class="btn btn-secondary" on:click={prevStep}>
+            <button class="btn btn-secondary" onclick={prevStep}>
               <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
               </svg>
@@ -768,7 +832,7 @@
             </button>
             <button 
               class="btn btn-primary btn-lg" 
-              on:click={submitRegistration}
+              onclick={submitRegistration}
               disabled={isSubmitting}
             >
               {#if isSubmitting}
@@ -841,7 +905,7 @@
             </div>
 
             <div class="step-actions">
-              <button class="btn btn-primary btn-lg" on:click={backToDashboard}>
+              <button class="btn btn-primary btn-lg" onclick={backToDashboard}>
                 Back to Dashboard
               </button>
             </div>
@@ -1171,6 +1235,51 @@
   /* File Upload */
   .file-upload {
     position: relative;
+  }
+
+  /* Land authority choice */
+  .authority-choice {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+  .authority-choice label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.9rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .authority-choice label.active {
+    border-color: #007A3D;
+    background: rgba(0, 122, 61, 0.05);
+  }
+  .authority-choice input {
+    position: absolute;
+    opacity: 0;
+  }
+  .authority-choice strong {
+    font-size: 0.9rem;
+    color: #0f172a;
+  }
+  .authority-choice small {
+    color: #64748b;
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+  .file-name {
+    margin-left: 0.5rem;
+    font-size: 0.85rem;
+    color: #007A3D;
+    font-weight: 600;
+  }
+  .file-hint {
+    margin-left: 0.5rem;
+    font-size: 0.8rem;
+    color: #64748b;
   }
 
   .file-input {

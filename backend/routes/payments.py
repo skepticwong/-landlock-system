@@ -63,7 +63,7 @@ def initiate_payment(current_user):
     if not all(k in data for k in required_fields):
         return jsonify({"error": "Missing required fields"}), 400
     
-    if data['payment_type'] not in ['land_registration', 'land_transfer', 'plot_verification', 'certificate_issuance']:
+    if data['payment_type'] not in ['land_registration', 'land_transfer', 'plot_verification', 'certificate_issuance', 'land_tax']:
         return jsonify({"error": "Invalid payment type"}), 400
     
     if data['payment_method'] not in PAYMENT_METHODS:
@@ -194,6 +194,111 @@ def get_user_payments(current_user):
     """
     payments = Payment.get_by_user(current_user.id)
     return jsonify([p.to_dict() for p in payments])
+
+
+# ──────────────────────────────────────────────────────
+# Land Tax (city/town leasehold plots)
+# ──────────────────────────────────────────────────────
+
+LAND_TAX_ANNUAL_MWK = 15000  # flat annual land tax for city-controlled plots
+
+@payments_bp.route("/api/payments/land-tax/status/<int:plot_id>", methods=["GET"])
+@token_required
+def land_tax_status(current_user, plot_id):
+    """
+    Land tax standing for a plot: whether it is city-controlled, when the
+    tax was last paid until, and whether payment is due.
+    """
+    plots = db.select("plots", eq={"id": plot_id})
+    if not plots:
+        return jsonify({"error": "Plot not found"}), 404
+    plot = plots[0]
+    if plot.get("user_id") != current_user.id and not (current_user.is_superuser or current_user.is_official):
+        return jsonify({"error": "Unauthorized"}), 403
+
+    paid_until = plot.get("land_tax_paid_until")
+    due = True
+    days_left = None
+    if paid_until:
+        try:
+            days_left = (datetime.fromisoformat(paid_until) - datetime.now()).days
+            due = days_left <= 0
+        except ValueError:
+            pass
+
+    return jsonify({
+        "plot_id": plot_id,
+        "land_authority": plot.get("land_authority", "chief"),
+        "annual_tax_mwk": LAND_TAX_ANNUAL_MWK,
+        "paid_until": paid_until,
+        "days_left": days_left,
+        "tax_due": due
+    })
+
+
+@payments_bp.route("/api/payments/land-tax", methods=["POST"])
+@token_required
+def pay_land_tax(current_user):
+    """
+    Pay the annual land tax for a city-controlled plot.
+
+    Body: { "plot_id": <int>, "payment_method": "airtel_money"|"tnm_mpamba"|"bank_card"|"cash" }
+
+    Extends land_tax_paid_until by one year from today (or from the current
+    paid-until date if it is still in the future, so early payers lose nothing).
+    """
+    data = request.json or {}
+    if "plot_id" not in data:
+        return jsonify({"error": "plot_id is required"}), 400
+    if data.get("payment_method") not in PAYMENT_METHODS:
+        return jsonify({"error": "Invalid payment method"}), 400
+
+    plots = db.select("plots", eq={"id": data["plot_id"]})
+    if not plots:
+        return jsonify({"error": "Plot not found"}), 404
+    plot = plots[0]
+    if plot.get("user_id") != current_user.id and not current_user.is_superuser:
+        return jsonify({"error": "You can only pay tax on your own plot"}), 403
+
+    if (plot.get("land_authority") or "chief").lower() != "city":
+        return jsonify({"error": "Land tax only applies to city/town-controlled plots. "
+                                 "Chief-controlled plots pay the chief fee at sale instead."}), 400
+
+    # Extend paid_until by one year
+    from datetime import timedelta
+    try:
+        base = datetime.fromisoformat(plot.get("land_tax_paid_until"))
+        if base < datetime.now():
+            base = datetime.now()
+    except (TypeError, ValueError):
+        base = datetime.now()
+    new_paid_until = (base + timedelta(days=365)).date().isoformat()
+
+    payment_data = {
+        "user_id": current_user.id,
+        "payment_type": "land_tax",
+        "payment_method": data["payment_method"],
+        "amount": LAND_TAX_ANNUAL_MWK,
+        "currency": "MWK",
+        "status": "pending",
+        "description": f"Annual land tax — plot #{plot['id']} ({plot.get('plot_name', '')})",
+        "plot_id": plot["id"],
+        "payment_reference": f"TAX-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+    }
+    payment = Payment.create(payment_data)
+    if not payment:
+        return jsonify({"error": "Failed to create payment"}), 500
+
+    # Mark the plot as paid through next year (mock flow completes immediately;
+    # when a real gateway lands, move this into the confirm callback)
+    db.update("plots", {"land_tax_paid_until": new_paid_until}, eq={"id": plot["id"]})
+    payment.update_status("completed", payment.payment_reference)
+
+    return jsonify({
+        "message": "Land tax paid successfully",
+        "payment": payment.to_dict(),
+        "paid_until": new_paid_until
+    }), 201
 
 
 @payments_bp.route("/api/payments/fees", methods=["GET"])

@@ -38,7 +38,15 @@
           if (browser) {
             localStorage.setItem('user', JSON.stringify(u));
           }
+          goto('/dashboard/admin');
+          return;
+        }
+        if (u.role === 'official') {
           goto('/dashboard/official');
+          return;
+        }
+        if (u.role === 'chief') {
+          goto('/dashboard/chief');
           return;
         }
       }

@@ -78,6 +78,16 @@ def token_required(f):
             current_user = User.get_by_id(user_id)
             if current_user is None:
                 return jsonify({"message": "User not found!"}), 404
+            if not getattr(current_user, "is_active", True):
+                return jsonify({"message": "This account is inactive."}), 403
+            if (
+                getattr(current_user, "must_change_password", False)
+                and request.path != "/api/auth/change-password"
+            ):
+                return jsonify({
+                    "message": "Change your temporary password to continue.",
+                    "must_change_password": True,
+                }), 403
                 
             return f(current_user, *args, **kwargs)
             

@@ -147,7 +147,10 @@ def initiate_sale(current_user):
     3. Auto-assign the chief based on plot location
     4. Generate approval codes for chief & witness
     5. Send SMS notifications
-    6. Create the transaction in 'pending_buyer' status
+    ── Chief fee ──
+    Sales of chief-controlled (customary) land carry a 5% chief fee on the
+    sale amount, collected with the transaction. City-controlled plots pay
+    annual land tax instead (see /api/payments/land-tax).
     """
     data = request.json
     identity_error = _identity_verification_error(current_user)
@@ -208,6 +211,11 @@ def initiate_sale(current_user):
     witness_code = generate_approval_code("WIT")
     chief_code = generate_approval_code("CHF")
 
+    # ── Chief fee: 5% of the sale amount on chief-controlled plots ──
+    land_authority = (plot.get('land_authority') or 'chief').lower()
+    sale_amount = float(data.get('amount', 0) or 0)
+    chief_fee = round(sale_amount * 0.05, 2) if land_authority == 'chief' and sale_amount > 0 else 0.0
+
     # ── Create transaction ──
     now = datetime.now().isoformat()
     tx_data = {
@@ -220,6 +228,8 @@ def initiate_sale(current_user):
         "transaction_type": "sale",
         "counterparty": buyer.get("full_name", ""),
         "amount": data.get("amount", 0),
+        "chief_fee": chief_fee,
+        "land_authority": land_authority,
         "notes": data.get("notes", ""),
         "status": "pending_buyer",
         "buyer_approval_status": "pending",
@@ -234,6 +244,13 @@ def initiate_sale(current_user):
     tx = db.insert("transactions", tx_data)
     if not tx:
         return jsonify({"error": "Failed to create transaction"}), 500
+
+    # Migration safety: chief_fee / land_authority columns may not exist on old DBs
+    if chief_fee:
+        try:
+            db.update("transactions", {"chief_fee": chief_fee, "land_authority": land_authority}, eq={"id": tx["id"]})
+        except Exception:
+            pass
 
     # ── Log event: sale initiated ──
     log_transaction_event(
@@ -280,7 +297,9 @@ def initiate_sale(current_user):
     )
 
     return jsonify({
-        "message": "Sale initiated successfully. Approval codes sent via SMS.",
+        "message": "Sale initiated successfully. Approval codes sent via SMS." + (
+            f" A chief fee of MWK {chief_fee:,.2f} (5%) applies." if chief_fee else ""
+        ),
         "transaction": {
             "id": tx["id"],
             "status": tx["status"],
@@ -289,6 +308,9 @@ def initiate_sale(current_user):
             "witness_name": witness["full_name"],
             "chief_name": chief_info["chief_name"],
             "chief_area": chief_info["area_name"],
+            "amount": data.get("amount", 0),
+            "chief_fee": chief_fee,
+            "land_authority": land_authority,
         },
     }), 201
 

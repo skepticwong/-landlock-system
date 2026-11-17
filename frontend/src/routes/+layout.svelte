@@ -3,6 +3,7 @@
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import favicon from '$lib/assets/favicon.svg';
+  import SystemNotifications from '$lib/components/SystemNotifications.svelte';
 
   let { children } = $props();
 
@@ -52,5 +53,7 @@
 <svelte:head>
 	<link rel="icon" href={favicon} />
 </svelte:head>
+
+<SystemNotifications />
 
 {@render children()}

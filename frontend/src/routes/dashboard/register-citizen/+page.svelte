@@ -167,10 +167,7 @@
 
       // Show success message
       showSuccess = true;
-      status.set('Citizen registered successfully!');
-
-      // Send SMS to citizen (in production, this would be handled by backend)
-      console.log(`SMS sent to ${formattedPhone}: Welcome to LandLock! Your account is ready. Temporary PIN: ${generatedPin}. Change it on first login.`);
+      status.set('Citizen registration submitted for administrator review.');
 
       // Reset form after 3 seconds
       setTimeout(() => {
@@ -238,12 +235,12 @@
     {#if showSuccess}
       <div class="success-message">
         <div class="success-icon"><Check class="w-8 h-8" /></div>
-        <h3>Citizen Registered Successfully!</h3>
+        <h3>Registration Submitted for Review</h3>
         <div class="pin-display">
-          <strong>Temporary PIN:</strong> <span class="pin-number">{generatedPin}</span>
+          <strong>Temporary PIN (share after approval):</strong> <span class="pin-number">{generatedPin}</span>
         </div>
         <p class="success-instructions">
-          Share the temporary PIN with the citizen. After signing in, they can submit their National ID from their profile for administrator review.
+          An administrator must review and approve the citizen's registration before the account can be used. The citizen can submit their National ID for a separate identity review after approval.
         </p>
       </div>
     {:else}
